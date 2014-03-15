@@ -47,6 +47,8 @@ static void http_server_trace(struct http_server *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
 struct http_sconnection {
+    struct http_server *server;
+
     int sock;
 
     struct event *ev_read;
@@ -62,8 +64,15 @@ struct http_sconnection {
 static struct http_sconnection * http_sconnection_setup(struct http_server *, int);
 static void http_sconnection_close(struct http_sconnection *);
 
+static int http_sconnection_write(struct http_sconnection *, const void *, size_t);
+
 static void http_sconnection_on_read_event(evutil_socket_t, short, void *);
 static void http_sconnection_on_write_event(evutil_socket_t, short, void *);
+
+static void http_sconnection_error(struct http_sconnection *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+static void http_sconnection_trace(struct http_sconnection *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
 
 struct http_listener {
     struct http_server *server;
@@ -232,6 +241,7 @@ http_sconnection_setup(struct http_server *server, int sock) {
     connection = http_malloc(sizeof(struct http_sconnection));
     memset(connection, 0, sizeof(struct http_sconnection));
 
+    connection->server = server;
     connection->sock = sock;
 
     connection->ev_read = event_new(server->ev_base, connection->sock,
@@ -239,12 +249,13 @@ http_sconnection_setup(struct http_server *server, int sock) {
                                     http_sconnection_on_read_event,
                                     connection);
     if (!connection->ev_read) {
-        http_set_error("cannot create read event: %s", strerror(errno));
+        http_set_error("cannot create read event handler: %s",
+                       strerror(errno));
         goto error;
     }
 
     if (event_add(connection->ev_read, NULL) == -1) {
-        http_set_error("cannot add read event: %s", strerror(errno));
+        http_set_error("cannot add read event handler: %s", strerror(errno));
         goto error;
     }
 
@@ -253,7 +264,8 @@ http_sconnection_setup(struct http_server *server, int sock) {
                                      http_sconnection_on_write_event,
                                      connection);
     if (!connection->ev_write) {
-        http_set_error("cannot create write event: %s", strerror(errno));
+        http_set_error("cannot create write event handler: %s",
+                       strerror(errno));
     }
 
     connection->rbuf = bf_buffer_new(0);
@@ -275,13 +287,42 @@ error:
     return NULL;
 }
 
+static int
+http_sconnection_write(struct http_sconnection *connection,
+                       const void *data, size_t sz) {
+    size_t previous_length;
+
+    previous_length = bf_buffer_length(connection->wbuf);
+
+    if (bf_buffer_add(connection->wbuf, data, sz) == -1) {
+        http_set_error("%s", bf_get_error());
+        return -1;
+    }
+
+    if (previous_length == 0) {
+        if (event_add(connection->ev_write, NULL) == -1) {
+            http_set_error("cannot add write event handler: %s",
+                           strerror(errno));
+            bf_buffer_truncate(connection->wbuf, previous_length);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static void
 http_sconnection_close(struct http_sconnection *connection) {
     if (!connection)
         return;
 
-    close(connection->sock);
-    connection->sock = -1;
+    if (connection->sock >= 0) {
+        ht_table_remove(connection->server->connections,
+                        HT_INT32_TO_POINTER(connection->sock));
+
+        close(connection->sock);
+        connection->sock = -1;
+    }
 
     if (connection->ev_read)
         event_free(connection->ev_read);
@@ -298,19 +339,75 @@ http_sconnection_close(struct http_sconnection *connection) {
 static void
 http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
     struct http_sconnection *connection;
+    ssize_t ret;
 
     connection = arg;
 
-    /* TODO */
+    ret = bf_buffer_read(connection->rbuf, connection->sock, BUFSIZ);
+    if (ret == -1) {
+        http_sconnection_error(connection, "cannot read socket: %s",
+                               strerror(errno));
+        http_sconnection_close(connection);
+        return;
+    }
+
+    if (ret == 0) {
+        http_sconnection_trace(connection, "connection closed");
+        http_sconnection_close(connection);
+        return;
+    }
+
+    http_sconnection_trace(connection, "%zi bytes read", ret);
 }
 
 static void
 http_sconnection_on_write_event(evutil_socket_t sock, short events, void *arg) {
     struct http_sconnection *connection;
+    ssize_t ret;
 
     connection = arg;
 
-    /* TODO */
+    ret = bf_buffer_write(connection->wbuf, connection->sock);
+    if (ret == -1) {
+        http_sconnection_error(connection, "cannot write to socket: %s",
+                               strerror(errno));
+        http_sconnection_close(connection);
+        return;
+    }
+
+    bf_buffer_skip(connection->wbuf, (size_t)ret);
+    if (bf_buffer_length(connection->wbuf) == 0)
+        event_del(connection->ev_write);
+
+    http_sconnection_trace(connection, "%zi bytes written", ret);
+}
+
+static void
+http_sconnection_error(struct http_sconnection *connection,
+                       const char *fmt, ...) {
+    char buf[HTTP_ERROR_BUFSZ];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
+    va_end(ap);
+
+    http_server_error(connection->server, "%s:%s: %s",
+                      connection->host, connection->port, buf);
+}
+
+static void
+http_sconnection_trace(struct http_sconnection *connection,
+                       const char *fmt, ...) {
+    char buf[HTTP_ERROR_BUFSZ];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
+    va_end(ap);
+
+    http_server_trace(connection->server, "%s:%s: %s",
+                      connection->host, connection->port, buf);
 }
 
 static struct http_listener *
@@ -435,11 +532,25 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
                       connection->port, NI_MAXSERV,
                       NI_NUMERICHOST | NI_NUMERICSERV);
     if (ret != 0) {
-        http_set_error("cannot resolve address: %s", gai_strerror(ret));
+        http_server_error(server, "cannot resolve address: %s",
+                          gai_strerror(ret));
         http_sconnection_close(connection);
         return;
     }
 
-    http_server_trace(server, "connection from %s:%s",
-                      connection->host, connection->port);
+    http_sconnection_trace(connection, "connection accepted");
+
+    {
+        const char *response;
+
+        response = "HTTP/1.1 503 Service Unavailable\r\n\r\n";
+
+        if (http_sconnection_write(connection,
+                                   response, strlen(response)) == -1) {
+            http_sconnection_error(connection, "cannot send response: %s",
+                                   http_get_error());
+            http_sconnection_close(connection);
+            return;
+        }
+    }
 }
