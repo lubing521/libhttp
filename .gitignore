@@ -1,0 +1,7 @@
+*.o
+*.a
+
+session.vim
+.tags
+
+/utils/http-server
