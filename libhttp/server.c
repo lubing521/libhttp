@@ -46,21 +46,30 @@ static void http_server_error(struct http_server *, const char *, ...)
 static void http_server_trace(struct http_server *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
-struct http_server_connection {
+struct http_sconnection {
     int sock;
+
+    struct event *ev_read;
+    struct event *ev_write;
 
     struct bf_buffer *rbuf;
     struct bf_buffer *wbuf;
+
+    char host[NI_MAXHOST];
+    char port[NI_MAXSERV];
 };
 
-static struct http_server_connection *http_server_connection_setup(int);
-static void http_server_connection_close(struct http_server_connection *);
+static struct http_sconnection * http_sconnection_setup(struct http_server *, int);
+static void http_sconnection_close(struct http_sconnection *);
+
+static void http_sconnection_on_read_event(evutil_socket_t, short, void *);
+static void http_sconnection_on_write_event(evutil_socket_t, short, void *);
 
 struct http_listener {
     struct http_server *server;
 
     int sock;
-    struct event *ev;
+    struct event *ev_sock;
 
     char host[NI_MAXHOST];
     char port[NI_MAXSERV];
@@ -69,6 +78,8 @@ struct http_listener {
 static struct http_listener *http_listener_setup(struct http_server *,
                                                  const struct addrinfo *);
 static void http_listener_close(struct http_listener *);
+
+static void http_listener_on_sock_event(evutil_socket_t, short, void *);
 
 struct http_server {
     struct http_server_cfg cfg;
@@ -160,10 +171,10 @@ http_server_shutdown(struct http_server *server) {
 
     it = ht_table_iterate(server->connections);
     if (it) {
-        struct http_server_connection *connection;
+        struct http_sconnection *connection;
 
         while (ht_table_iterator_get_next(it, NULL, (void **)&connection) == 1)
-            http_server_connection_close(connection);
+            http_sconnection_close(connection);
         ht_table_delete(server->connections);
 
         ht_table_iterator_delete(it);
@@ -214,14 +225,36 @@ http_server_trace(struct http_server *server, const char *fmt, ...) {
     server->cfg.trace_hook(buf, server->cfg.hook_arg);
 }
 
-static struct http_server_connection *
-http_server_connection_setup(int sock) {
-    struct http_server_connection *connection;
+static struct http_sconnection *
+http_sconnection_setup(struct http_server *server, int sock) {
+    struct http_sconnection *connection;
 
-    connection = http_malloc(sizeof(struct http_server_connection));
-    memset(connection, 0, sizeof(struct http_server_connection));
+    connection = http_malloc(sizeof(struct http_sconnection));
+    memset(connection, 0, sizeof(struct http_sconnection));
 
     connection->sock = sock;
+
+    connection->ev_read = event_new(server->ev_base, connection->sock,
+                                    EV_READ | EV_PERSIST,
+                                    http_sconnection_on_read_event,
+                                    connection);
+    if (!connection->ev_read) {
+        http_set_error("cannot create read event: %s", strerror(errno));
+        goto error;
+    }
+
+    if (event_add(connection->ev_read, NULL) == -1) {
+        http_set_error("cannot add read event: %s", strerror(errno));
+        goto error;
+    }
+
+    connection->ev_write = event_new(server->ev_base, connection->sock,
+                                     EV_WRITE | EV_PERSIST,
+                                     http_sconnection_on_write_event,
+                                     connection);
+    if (!connection->ev_write) {
+        http_set_error("cannot create write event: %s", strerror(errno));
+    }
 
     connection->rbuf = bf_buffer_new(0);
     if (!connection->rbuf) {
@@ -238,23 +271,46 @@ http_server_connection_setup(int sock) {
     return connection;
 
 error:
-    http_server_connection_close(connection);
+    http_sconnection_close(connection);
     return NULL;
 }
 
 static void
-http_server_connection_close(struct http_server_connection *connection) {
+http_sconnection_close(struct http_sconnection *connection) {
     if (!connection)
         return;
 
     close(connection->sock);
     connection->sock = -1;
 
+    if (connection->ev_read)
+        event_free(connection->ev_read);
+    if (connection->ev_write)
+        event_free(connection->ev_write);
+
     bf_buffer_delete(connection->rbuf);
     bf_buffer_delete(connection->wbuf);
 
-    memset(connection, 0, sizeof(struct http_server_connection));
+    memset(connection, 0, sizeof(struct http_sconnection));
     http_free(connection);
+}
+
+static void
+http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
+    struct http_sconnection *connection;
+
+    connection = arg;
+
+    /* TODO */
+}
+
+static void
+http_sconnection_on_write_event(evutil_socket_t sock, short events, void *arg) {
+    struct http_sconnection *connection;
+
+    connection = arg;
+
+    /* TODO */
 }
 
 static struct http_listener *
@@ -298,6 +354,20 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
         goto error;
     }
 
+    listener->ev_sock = event_new(server->ev_base, listener->sock,
+                                  EV_READ | EV_PERSIST,
+                                  http_listener_on_sock_event,
+                                  listener);
+    if (!listener->ev_sock) {
+        http_set_error("cannot create read event: %s", strerror(errno));
+        goto error;
+    }
+
+    if (event_add(listener->ev_sock, NULL) == -1) {
+        http_set_error("cannot add read event: %s", strerror(errno));
+        goto error;
+    }
+
     http_server_trace(listener->server, "listening on %s:%s",
                       listener->host, listener->port);
     return listener;
@@ -312,10 +382,64 @@ http_listener_close(struct http_listener *listener) {
     if (!listener)
         return;
 
+    if (listener->ev_sock)
+        event_free(listener->ev_sock);
+
     if (listener->sock >= 0)
         close(listener->sock);
     listener->sock = -1;
 
     memset(listener, 0, sizeof(struct http_listener));
     http_free(listener);
+}
+
+static void
+http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
+    struct http_server *server;
+    struct http_listener *listener;
+    struct http_sconnection *connection;
+    struct sockaddr_storage addr;
+    socklen_t addrlen;
+    int client_sock;
+    int ret;
+
+    listener = arg;
+    server = listener->server;
+
+    addrlen = sizeof(struct sockaddr_storage);
+    client_sock = accept(listener->sock, (struct sockaddr *)&addr, &addrlen);
+    if (client_sock == -1) {
+        http_server_error(server, "cannot accept connection: %s",
+                          strerror(errno));
+        return;
+    }
+
+    connection = http_sconnection_setup(server, client_sock);
+    if (!connection) {
+        http_server_error(server, "cannot setup connection: %s",
+                          http_get_error());
+        close(sock);
+        return;
+    }
+
+    if (ht_table_insert(server->connections,
+                        HT_INT32_TO_POINTER(connection->sock),
+                        connection) == -1) {
+        http_server_error(server, "%s", ht_get_error());
+        http_sconnection_close(connection);
+        return;
+    }
+
+    ret = getnameinfo((struct sockaddr *)&addr, addrlen,
+                      connection->host, NI_MAXHOST,
+                      connection->port, NI_MAXSERV,
+                      NI_NUMERICHOST | NI_NUMERICSERV);
+    if (ret != 0) {
+        http_set_error("cannot resolve address: %s", gai_strerror(ret));
+        http_sconnection_close(connection);
+        return;
+    }
+
+    http_server_trace(server, "connection from %s:%s",
+                      connection->host, connection->port);
 }
