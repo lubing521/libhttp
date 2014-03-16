@@ -14,8 +14,28 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <string.h>
+
 #include "http.h"
 #include "internal.h"
+
+static int http_method_parse(const char *, size_t, enum http_method *);
+static int http_version_parse(const char *, size_t, enum http_version *);
+
+const char *
+http_version_to_string(enum http_version version) {
+    static const char *strings[] = {
+        [HTTP_1_0] = "HTTP/1.0",
+        [HTTP_1_1] = "HTTP/1.1",
+    };
+    static size_t nb_strings;
+
+    nb_strings = HTTP_ARRAY_NB_ELEMENTS(strings);
+    if (version >= nb_strings)
+        return NULL;
+
+    return strings[version];
+}
 
 const char *
 http_method_to_string(enum http_method method) {
@@ -36,4 +56,264 @@ http_method_to_string(enum http_method method) {
         return NULL;
 
     return strings[method];
+}
+
+void
+http_msg_free(struct http_msg *msg) {
+    if (!msg)
+        return;
+
+    switch (msg->type) {
+    case HTTP_MSG_REQUEST:
+        http_free(msg->u.request.uri);
+        break;
+
+    case HTTP_MSG_RESPONSE:
+        break;
+    }
+
+    memset(msg, 0, sizeof(struct http_msg));
+}
+
+int
+http_msg_parse(struct http_msg *msg, struct bf_buffer *buf,
+               const struct http_cfg *cfg) {
+    int ret;
+
+    switch (msg->parsing_state) {
+    case HTTP_PARSING_BEFORE_START_LINE:
+        if (msg->type == HTTP_MSG_REQUEST) {
+            ret = http_msg_parse_request_line(msg, buf, cfg);
+        } else if (msg->type == HTTP_MSG_RESPONSE) {
+            ret = http_msg_parse_status_line(msg, buf, cfg);
+        } else {
+            http_set_error("unknown message type %d", msg->type);
+            return -1;
+        }
+
+        return ret;
+
+    case HTTP_PARSING_BEFORE_HEADER:
+        return http_msg_parse_headers(msg, buf, cfg);
+
+    case HTTP_PARSING_BEFORE_BODY:
+        return http_msg_parse_body(msg, buf, cfg);
+
+    case HTTP_PARSING_DONE:
+        return 1;
+    }
+}
+
+int
+http_msg_parse_request_line(struct http_msg *msg, struct bf_buffer *buf,
+                            const struct http_cfg *cfg) {
+    const char *ptr;
+    size_t len;
+
+    const char *space, *cr;
+    size_t toklen;
+
+    ptr = bf_buffer_data(buf);
+    len = bf_buffer_length(buf);
+
+    /* Method */
+    space = memchr(ptr, ' ', len);
+    if (!space) {
+        if (len > 32) {
+            /* TODO HTTP 501 */
+            http_set_error("method too long");
+            return -1;
+        } else {
+            return 0;
+        }
+    }
+
+    toklen = (size_t)(space - ptr);
+    if (toklen == 0) {
+        http_set_error("empty method");
+        return -1;
+    }
+
+    if (http_method_parse(ptr, toklen, &msg->u.request.method) == -1) {
+        /* TODO HTTP 501 */
+        return -1;
+    }
+
+    ptr += toklen + 1;
+    len -= toklen - 1;
+
+    /* URI */
+    space = memchr(ptr, ' ', len);
+    if (!space) {
+        if (len > cfg->u.server.max_request_uri_length) {
+            /* TODO HTTP 414 */
+            http_set_error("request uri too long");
+            return -1;
+        } else {
+            return 0;
+        }
+    }
+
+    toklen = (size_t)(space - ptr);
+    if (toklen == 0) {
+        http_set_error("empty request uri");
+        return -1;
+    }
+
+    msg->u.request.uri = http_strndup(ptr, toklen);
+
+    ptr += toklen + 1;
+    len -= toklen - 1;
+
+    /* HTTP version */
+    cr = memchr(ptr, '\r', len);
+    if (!cr) {
+        if (len > 8) {
+            /* TODO HTTP 505 */
+            http_set_error("http version too long");
+            return -1;
+        } else {
+            return 0;
+        }
+    }
+
+    toklen = (size_t)(cr - ptr);
+    if (cr == 0) {
+        http_set_error("empty version");
+        return -1;
+    }
+
+    if (http_version_parse(ptr, toklen, &msg->u.request.version) == -1) {
+        /* TODO HTTP 505 */
+        return -1;
+    }
+
+    ptr += toklen + 1;
+    len -= toklen - 1;
+
+    bf_buffer_skip(buf, len - bf_buffer_length(buf));
+
+    msg->parsing_state = HTTP_PARSING_DONE; /* XXX temporary */
+    return 1;
+}
+
+int
+http_msg_parse_status_line(struct http_msg *msg, struct bf_buffer *buf,
+                           const struct http_cfg *cfg) {
+    const char *ptr;
+    size_t sz;
+
+    ptr = bf_buffer_data(buf);
+    sz = bf_buffer_length(buf);
+
+    return 0;
+}
+
+int
+http_msg_parse_headers(struct http_msg *msg, struct bf_buffer *buf,
+                       const struct http_cfg *cfg) {
+    const char *ptr;
+    size_t sz;
+
+    ptr = bf_buffer_data(buf);
+    sz = bf_buffer_length(buf);
+
+    return 0;
+}
+
+int
+http_msg_parse_body(struct http_msg *msg, struct bf_buffer *buf,
+                    const struct http_cfg *cfg) {
+    const char *ptr;
+    size_t sz;
+
+    ptr = bf_buffer_data(buf);
+    sz = bf_buffer_length(buf);
+
+    return 0;
+}
+
+static int
+http_method_parse(const char *str, size_t len, enum http_method *method) {
+    switch (str[0]) {
+    case 'C':
+        if (memcmp(str, "CONNECT", len) == 0) {
+            *method = HTTP_CONNECT;
+            return 1;
+        } else {
+            goto unknown;
+        }
+
+    case 'D':
+        if (memcmp(str, "DELETE", len) == 0) {
+            *method = HTTP_DELETE;
+            return 1;
+        } else {
+            goto unknown;
+        }
+
+    case 'G':
+        if (memcmp(str, "GET", len) == 0) {
+            *method = HTTP_GET;
+            return 1;
+        } else {
+            goto unknown;
+        }
+
+    case 'H':
+        if (memcmp(str, "HEAD", len) == 0) {
+            *method = HTTP_HEAD;
+            return 1;
+        } else {
+            goto unknown;
+        }
+
+    case 'O':
+        if (memcmp(str, "OPTIONS", len) == 0) {
+            *method = HTTP_OPTIONS;
+            return 1;
+        } else {
+            goto unknown;
+        }
+
+    case 'P':
+        if (memcmp(str, "POST", len) == 0) {
+            *method = HTTP_POST;
+            return 1;
+        } else if (memcmp(str, "PUT", len) == 0) {
+            *method = HTTP_PUT;
+            return 1;
+        } else {
+            goto unknown;
+        }
+
+    case 'T':
+        if (memcmp(str, "TRACE", len) == 0) {
+            *method = HTTP_TRACE;
+            return 1;
+        } else {
+            goto unknown;
+        }
+
+    default:
+        goto unknown;
+    }
+
+unknown:
+    http_set_error("unknown method");
+    return -1;
+}
+
+static int
+http_version_parse(const char *str, size_t len, enum http_version *version) {
+    if (memcmp(str, "HTTP/1.1", len) == 0) {
+        *version = HTTP_1_1;
+        return 1;
+    } else if (memcmp(str, "HTTP/1.0", len) == 0) {
+        *version = HTTP_1_0;
+        return 1;
+    } else {
+        http_set_error("unknown http version");
+        return -1;
+    }
 }

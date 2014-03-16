@@ -34,4 +34,53 @@ void *http_calloc(size_t, size_t);
 void *http_realloc(void *, size_t);
 void http_free(void *);
 
+/* Strings */
+char *http_strdup(const char *);
+char *http_strndup(const char *, size_t);
+
+/* Protocol */
+enum http_parsing_state {
+    HTTP_PARSING_BEFORE_START_LINE,
+    HTTP_PARSING_BEFORE_HEADER,
+    HTTP_PARSING_BEFORE_BODY,
+
+    HTTP_PARSING_DONE,
+};
+
+struct http_msg {
+    enum http_msg_type type;
+
+    union {
+        struct {
+            enum http_version version;
+            enum http_method method;
+            char *uri;
+        } request;
+
+        struct {
+            enum http_version version;
+            enum http_status_code status_code;
+            char *reason_phrase;
+        } response;
+    } u;
+
+    /* TODO Headers */
+    /* TODO Body */
+
+    enum http_parsing_state parsing_state;
+};
+
+void http_msg_free(struct http_msg *);
+
+int http_msg_parse(struct http_msg *, struct bf_buffer *,
+                   const struct http_cfg *);
+int http_msg_parse_request_line(struct http_msg *, struct bf_buffer *,
+                                const struct http_cfg *);
+int http_msg_parse_status_line(struct http_msg *, struct bf_buffer *,
+                               const struct http_cfg *);
+int http_msg_parse_headers(struct http_msg *, struct bf_buffer *,
+                           const struct http_cfg *);
+int http_msg_parse_body(struct http_msg *, struct bf_buffer *,
+                        const struct http_cfg *);
+
 #endif

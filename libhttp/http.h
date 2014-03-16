@@ -22,6 +22,8 @@
 
 #include <event.h>
 
+#include <buffer.h>
+
 /* Error handling */
 const char *http_get_error(void);
 
@@ -38,6 +40,13 @@ extern const struct http_memory_allocator *http_default_memory_allocator;
 void http_set_memory_allocator(const struct http_memory_allocator *allocator);
 
 /* Protocol */
+enum http_version {
+    HTTP_1_0 = 0,
+    HTTP_1_1,
+};
+
+const char *http_version_to_string(enum http_version);
+
 enum http_method {
     HTTP_OPTIONS = 0,
     HTTP_GET,
@@ -98,24 +107,35 @@ enum http_status_code {
     HTTP_HTTP_VERSION_NOT_SUPPORTED    = 505,
 };
 
+enum http_msg_type {
+    HTTP_MSG_REQUEST,
+    HTTP_MSG_RESPONSE,
+};
+
 /* Server */
 typedef void (*http_error_hook)(const char *, void *);
 typedef void (*http_trace_hook)(const char *, void *);
 
-struct http_server_cfg {
+struct http_cfg {
     const char *host;
     const char *port;
-
-    int connection_backlog;
 
     http_error_hook error_hook;
     http_trace_hook trace_hook;
     void *hook_arg;
+
+    union {
+        struct {
+            int connection_backlog;
+
+            size_t max_request_uri_length;
+        } server;
+    } u;
 };
 
-extern struct http_server_cfg http_server_default_cfg;
+extern struct http_cfg http_server_default_cfg;
 
-struct http_server *http_server_listen(const struct http_server_cfg *,
+struct http_server *http_server_listen(const struct http_cfg *,
                                        struct event_base *);
 void http_server_shutdown(struct http_server *server);
 

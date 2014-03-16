@@ -41,7 +41,7 @@ static struct https https;
 static void https_die(const char *, ...);
 static void https_usage(const char *, int);
 
-static void https_initialize(const struct http_server_cfg *);
+static void https_initialize(const struct http_cfg *);
 static void https_shutdown(void);
 
 static void https_on_signal(evutil_socket_t, short, void *);
@@ -50,7 +50,7 @@ static void https_on_trace(const char *, void *);
 
 int
 main(int argc, char **argv) {
-    struct http_server_cfg cfg;
+    struct http_cfg cfg;
     int opt;
 
     opterr = 0;
@@ -106,7 +106,7 @@ https_die(const char *fmt, ...) {
 }
 
 static void
-https_initialize(const struct http_server_cfg *cfg) {
+https_initialize(const struct http_cfg *cfg) {
     https.ev_base = event_base_new();
     if (!https.ev_base)
         https_die("cannot create event base: %s", strerror(errno));
@@ -133,7 +133,6 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
     https.server = http_server_listen(cfg, https.ev_base);
     if (!https.server)
         https_die("%s", http_get_error());
-
 }
 
 static void

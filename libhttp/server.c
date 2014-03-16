@@ -30,15 +30,21 @@
 #include "http.h"
 #include "internal.h"
 
-struct http_server_cfg http_server_default_cfg = {
+struct http_cfg http_server_default_cfg = {
     .host = "localhost",
     .port = "80",
-
-    .connection_backlog = 5,
 
     .error_hook = NULL,
     .trace_hook = NULL,
     .hook_arg = NULL,
+
+    .u = {
+        .server = {
+            .connection_backlog = 5,
+
+            .max_request_uri_length = 2048,
+        }
+    }
 };
 
 static void http_server_error(struct http_server *, const char *, ...)
@@ -91,7 +97,7 @@ static void http_listener_close(struct http_listener *);
 static void http_listener_on_sock_event(evutil_socket_t, short, void *);
 
 struct http_server {
-    struct http_server_cfg cfg;
+    struct http_cfg cfg;
 
     struct event_base *ev_base;
 
@@ -100,7 +106,7 @@ struct http_server {
 };
 
 struct http_server *
-http_server_listen(const struct http_server_cfg *cfg,
+http_server_listen(const struct http_cfg *cfg,
                          struct event_base *ev_base) {
     struct http_server *server;
     struct addrinfo hints, *res;
@@ -358,6 +364,34 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
     }
 
     http_sconnection_trace(connection, "%zi bytes read", ret);
+
+    for (;;) {
+        struct http_msg msg;
+        int ret;
+
+        memset(&msg, 0, sizeof(struct http_msg));
+
+        msg.type = HTTP_MSG_REQUEST;
+        msg.parsing_state = HTTP_PARSING_BEFORE_START_LINE;
+
+        ret = http_msg_parse(&msg, connection->rbuf, &connection->server->cfg);
+        if (ret == -1) {
+            http_sconnection_error(connection, "cannot parse request: %s",
+                                   http_get_error());
+            http_sconnection_close(connection);
+            return;
+        }
+
+        if (ret == 0)
+            break;
+
+        http_sconnection_trace(connection, "%s %s %s",
+                               http_method_to_string(msg.u.request.method),
+                               msg.u.request.uri,
+                               http_version_to_string(msg.u.request.version));
+
+        http_msg_free(&msg);
+    }
 }
 
 static void
@@ -413,7 +447,7 @@ http_sconnection_trace(struct http_sconnection *connection,
 static struct http_listener *
 http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
     struct http_listener *listener;
-    struct http_server_cfg *cfg;
+    struct http_cfg *cfg;
     int ret;
 
     listener = http_malloc(sizeof(struct http_listener));
@@ -437,7 +471,7 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
         goto error;
     }
 
-    if (listen(listener->sock, cfg->connection_backlog) == -1) {
+    if (listen(listener->sock, cfg->u.server.connection_backlog) == -1) {
         http_set_error("cannot listen on socket: %s", strerror(errno));
         goto error;
     }
@@ -540,6 +574,7 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
 
     http_sconnection_trace(connection, "connection accepted");
 
+#if 0
     {
         const char *response;
 
@@ -553,4 +588,5 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
             return;
         }
     }
+#endif
 }
