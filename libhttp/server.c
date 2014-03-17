@@ -448,7 +448,7 @@ static struct http_listener *
 http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
     struct http_listener *listener;
     struct http_cfg *cfg;
-    int ret;
+    int ret, opt;
 
     listener = http_malloc(sizeof(struct http_listener));
     if (!listener)
@@ -463,6 +463,14 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
     listener->sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
     if (listener->sock == -1) {
         http_set_error("cannot create socket: %s", strerror(errno));
+        goto error;
+    }
+
+    opt = 1;
+    if (setsockopt(listener->sock, SOL_SOCKET, SO_REUSEADDR,
+                   &opt, sizeof(opt)) == -1) {
+        http_set_error("cannot set SO_REUSEADDR socket option: %s",
+                       strerror(errno));
         goto error;
     }
 
