@@ -107,6 +107,8 @@ enum http_status_code {
     HTTP_HTTP_VERSION_NOT_SUPPORTED    = 505,
 };
 
+const char *http_status_code_to_reason_phrase(enum http_status_code);
+
 enum http_msg_type {
     HTTP_MSG_REQUEST,
     HTTP_MSG_RESPONSE,

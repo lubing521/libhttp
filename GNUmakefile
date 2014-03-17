@@ -74,7 +74,7 @@ doc/%.html: doc/*.mkd
 	pandoc $(PANDOC_OPTS) -t html5 -o $@ $<
 
 clean:
-	$(RM) $(libhttp_LIB) $(wildcard src/*.o)
+	$(RM) $(libhttp_LIB) $(wildcard libhttp/*.o)
 	$(RM) $(utils_BIN) $(wildcard utils/*.o)
 	$(RM) $(wildcard **/*.gc??)
 	$(RM) -r coverage

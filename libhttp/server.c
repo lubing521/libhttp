@@ -65,12 +65,22 @@ struct http_sconnection {
 
     char host[NI_MAXHOST];
     char port[NI_MAXSERV];
+
+    bool shutting_down;
 };
 
-static struct http_sconnection * http_sconnection_setup(struct http_server *, int);
+static struct http_sconnection * http_sconnection_setup(struct http_server *,
+                                                        int);
 static void http_sconnection_close(struct http_sconnection *);
 
-static int http_sconnection_write(struct http_sconnection *, const void *, size_t);
+static int http_sconnection_write(struct http_sconnection *,
+                                  const void *, size_t);
+static int http_sconnection_printf(struct http_sconnection *,
+                                   const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+
+static int http_sconnection_http_error(struct http_sconnection *,
+                                       enum http_status_code);
 
 static void http_sconnection_on_read_event(evutil_socket_t, short, void *);
 static void http_sconnection_on_write_event(evutil_socket_t, short, void *);
@@ -317,6 +327,65 @@ http_sconnection_write(struct http_sconnection *connection,
     return 0;
 }
 
+static int
+http_sconnection_printf(struct http_sconnection *connection,
+                                   const char *fmt, ...) {
+    size_t previous_length;
+    va_list ap;
+
+    previous_length = bf_buffer_length(connection->wbuf);
+
+    va_start(ap, fmt);
+    if (bf_buffer_add_vprintf(connection->wbuf, fmt, ap) == -1) {
+        http_set_error("%s", bf_get_error());
+        return -1;
+    }
+    va_end(ap);
+
+    if (previous_length == 0) {
+        if (event_add(connection->ev_write, NULL) == -1) {
+            http_set_error("cannot add write event handler: %s",
+                           strerror(errno));
+            bf_buffer_truncate(connection->wbuf, previous_length);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int
+http_sconnection_http_error(struct http_sconnection *connection,
+                            enum http_status_code status_code) {
+    const char *reason_phrase;
+
+    if (event_del(connection->ev_read) == -1) {
+        http_sconnection_error(connection,
+                               "cannot remove read event handler: %s",
+                               strerror(errno));
+        http_sconnection_close(connection);
+        return -1;
+    }
+
+    if (shutdown(connection->sock, SHUT_RD) == -1) {
+        http_sconnection_error(connection, "cannot shutdown socket: %s",
+                               strerror(errno));
+        http_sconnection_close(connection);
+        return -1;
+    }
+
+    reason_phrase = http_status_code_to_reason_phrase(status_code);
+    if (http_sconnection_printf(connection, "HTTP/1.0 %d %s\r\n",
+                                status_code, reason_phrase) == -1) {
+        http_sconnection_error(connection, "%s", strerror(errno));
+        http_sconnection_close(connection);
+        return -1;
+    }
+
+    connection->shutting_down = true;
+    return 0;
+}
+
 static void
 http_sconnection_close(struct http_sconnection *connection) {
     if (!connection)
@@ -367,6 +436,7 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
 
     for (;;) {
         struct http_msg msg;
+        enum http_status_code http_error;
         int ret;
 
         memset(&msg, 0, sizeof(struct http_msg));
@@ -374,11 +444,16 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         msg.type = HTTP_MSG_REQUEST;
         msg.parsing_state = HTTP_PARSING_BEFORE_START_LINE;
 
-        ret = http_msg_parse(&msg, connection->rbuf, &connection->server->cfg);
+        ret = http_msg_parse(&msg, connection->rbuf, &connection->server->cfg,
+                             &http_error);
         if (ret == -1) {
             http_sconnection_error(connection, "cannot parse request: %s",
                                    http_get_error());
-            http_sconnection_close(connection);
+            if (http_error > 0) {
+                http_sconnection_http_error(connection, http_error);
+            } else {
+                http_sconnection_close(connection);
+            }
             return;
         }
 
@@ -391,6 +466,9 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                                http_version_to_string(msg.u.request.version));
 
         http_msg_free(&msg);
+
+        /* XXX Temporary */
+        http_sconnection_http_error(connection, HTTP_SERVICE_UNAVAILABLE);
     }
 }
 
@@ -409,11 +487,17 @@ http_sconnection_on_write_event(evutil_socket_t sock, short events, void *arg) {
         return;
     }
 
+    http_sconnection_trace(connection, "%zi bytes written", ret);
+
     bf_buffer_skip(connection->wbuf, (size_t)ret);
-    if (bf_buffer_length(connection->wbuf) == 0)
+    if (bf_buffer_length(connection->wbuf) == 0) {
         event_del(connection->ev_write);
 
-    http_sconnection_trace(connection, "%zi bytes written", ret);
+        if (connection->shutting_down) {
+            http_sconnection_close(connection);
+            return;
+        }
+    }
 }
 
 static void
@@ -581,20 +665,4 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
     }
 
     http_sconnection_trace(connection, "connection accepted");
-
-#if 0
-    {
-        const char *response;
-
-        response = "HTTP/1.1 503 Service Unavailable\r\n\r\n";
-
-        if (http_sconnection_write(connection,
-                                   response, strlen(response)) == -1) {
-            http_sconnection_error(connection, "cannot send response: %s",
-                                   http_get_error());
-            http_sconnection_close(connection);
-            return;
-        }
-    }
-#endif
 }

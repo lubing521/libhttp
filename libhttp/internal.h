@@ -73,14 +73,19 @@ struct http_msg {
 void http_msg_free(struct http_msg *);
 
 int http_msg_parse(struct http_msg *, struct bf_buffer *,
-                   const struct http_cfg *);
+                   const struct http_cfg *,
+                   enum http_status_code *);
 int http_msg_parse_request_line(struct http_msg *, struct bf_buffer *,
-                                const struct http_cfg *);
+                                const struct http_cfg *,
+                                enum http_status_code *);
 int http_msg_parse_status_line(struct http_msg *, struct bf_buffer *,
-                               const struct http_cfg *);
+                               const struct http_cfg *,
+                               enum http_status_code *);
 int http_msg_parse_headers(struct http_msg *, struct bf_buffer *,
-                           const struct http_cfg *);
+                           const struct http_cfg *,
+                           enum http_status_code *);
 int http_msg_parse_body(struct http_msg *, struct bf_buffer *,
-                        const struct http_cfg *);
+                        const struct http_cfg *,
+                        enum http_status_code *);
 
 #endif
