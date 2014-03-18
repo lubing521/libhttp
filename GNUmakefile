@@ -46,6 +46,16 @@ libhttp_OBJ= $(subst .c,.o,$(libhttp_SRC))
 
 $(libhttp_LIB): CFLAGS+=
 
+# Target: tests
+tests_SRC= $(wildcard tests/*.c)
+tests_INC= $(wildcard tests/*.h)
+tests_OBJ= $(subst .c,.o,$(tests_SRC))
+tests_BIN= $(subst .o,,$(tests_OBJ))
+
+$(tests_BIN): CFLAGS+= -Ilibhttp -Itests
+$(tests_BIN): LDFLAGS+= -L.
+$(tests_BIN): LDLIBS+= -lhttp -lhashtable -lbuffer -levent
+
 # Target: utils
 utils_SRC= $(wildcard utils/*.c)
 utils_OBJ= $(subst .c,.o,$(utils_SRC))
@@ -60,11 +70,15 @@ doc_SRC= $(wildcard doc/*.mkd)
 doc_HTML= $(subst .mkd,.html,$(doc_SRC))
 
 # Rules
-all: $(libhttp_LIB) $(utils_BIN) $(doc_HTML)
+all: $(libhttp_LIB) $(tests_BIN) $(utils_BIN) $(doc_HTML)
 
 $(libhttp_LIB): $(libhttp_INC)
 $(libhttp_LIB): $(libhttp_OBJ)
 	$(AR) cr $@ $(libhttp_OBJ)
+
+$(tests_OBJ): $(libhttp_LIB) $(libhttp_INC) $(tests_INC)
+tests/%: tests/%.o
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(utils_OBJ): $(libhttp_LIB) $(libhttp_INC)
 utils/%: utils/%.o
@@ -76,6 +90,7 @@ doc/%.html: doc/*.mkd
 clean:
 	$(RM) $(libhttp_LIB) $(wildcard libhttp/*.o)
 	$(RM) $(utils_BIN) $(wildcard utils/*.o)
+	$(RM) $(tests_BIN) $(wildcard tests/*.o)
 	$(RM) $(wildcard **/*.gc??)
 	$(RM) -r coverage
 	$(RM) -r $(doc_HTML)

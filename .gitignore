@@ -4,4 +4,6 @@
 session.vim
 .tags
 
+/tests/parser
+
 /utils/http-server

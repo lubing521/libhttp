@@ -232,6 +232,11 @@ http_msg_add_header(struct http_msg *msg, const struct http_header *header) {
 }
 
 void
+http_msg_init(struct http_msg *msg) {
+    memset(msg, 0, sizeof(struct http_msg));
+}
+
+void
 http_msg_free(struct http_msg *msg) {
     if (!msg)
         return;
@@ -296,29 +301,44 @@ http_parser_fail(struct http_parser *parser, enum http_status_code status_code,
 
 int
 http_msg_parse(struct bf_buffer *buf, struct http_parser *parser) {
-    switch (parser->state) {
-    case HTTP_PARSER_START:
-        if (parser->msg.type == HTTP_MSG_REQUEST) {
-            return http_msg_parse_request_line(buf, parser);
-        } else if (parser->msg.type == HTTP_MSG_RESPONSE) {
-            return http_msg_parse_status_line(buf, parser);
-        } else {
-            http_set_error("unknown message type %d", parser->msg.type);
-            return -1;
+    int ret;
+
+    do {
+        switch (parser->state) {
+        case HTTP_PARSER_START:
+            if (parser->msg.type == HTTP_MSG_REQUEST) {
+                ret = http_msg_parse_request_line(buf, parser);
+            } else if (parser->msg.type == HTTP_MSG_RESPONSE) {
+                ret = http_msg_parse_status_line(buf, parser);
+            } else {
+                http_set_error("unknown message type %d", parser->msg.type);
+                return -1;
+            }
+            break;
+
+        case HTTP_PARSER_HEADER:
+            ret = http_msg_parse_headers(buf, parser);
+            break;
+
+        case HTTP_PARSER_BODY:
+            ret = http_msg_parse_body(buf, parser);
+            break;
+
+        case HTTP_PARSER_ERROR:
+            ret = 1;
+            break;
+
+        case HTTP_PARSER_DONE:
+            ret = 1;
+            break;
         }
 
-    case HTTP_PARSER_HEADER:
-        return http_msg_parse_headers(buf, parser);
+        if (ret <= 0)
+            return ret;
+    } while (parser->state != HTTP_PARSER_DONE
+          && parser->state != HTTP_PARSER_ERROR);
 
-    case HTTP_PARSER_BODY:
-        return http_msg_parse_body(buf, parser);
-
-    case HTTP_PARSER_ERROR:
-        return -1;
-
-    case HTTP_PARSER_DONE:
-        return 1;
-    }
+    return 1;
 }
 
 /* These macros are helpers for parsers, and depend on three variables:
