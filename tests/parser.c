@@ -50,6 +50,7 @@ main(int argc, char **argv) {
         }                                                    \
     } while (0)
 
+
 #define HTTPT_END(str_)            \
     do {                           \
         http_parser_free(&parser); \
@@ -57,7 +58,7 @@ main(int argc, char **argv) {
     } while (0)
 
     /* Request lines */
-#define HTTPT_CHECK_REQUEST_LINE(str_, method_, uri_, version_) \
+#define HTTPT_REQUEST_LINE(str_, method_, uri_, version_)       \
     do {                                                        \
         HTTPT_BEGIN(str_);                                      \
         HTTPT_IS_EQUAL_INT(msg->u.request.method, method_);     \
@@ -66,13 +67,39 @@ main(int argc, char **argv) {
         HTTPT_END();                                            \
     } while (0)
 
-    HTTPT_CHECK_REQUEST_LINE("GET / HTTP/1.0\r\n\r\n",
-                             HTTP_GET, "/", HTTP_1_0);
-    HTTPT_CHECK_REQUEST_LINE("POST / HTTP/1.1\r\n\r\n",
-                             HTTP_POST, "/", HTTP_1_1);
-    HTTPT_CHECK_REQUEST_LINE("GET   /  HTTP/1.0\r\n\r\n",
-                             HTTP_GET, "/", HTTP_1_0);
-#undef HTTPT_CHECK_REQUEST_LINE
+#define HTTPT_INVALID_REQUEST_LINE(str_, status_code_)         \
+    do {                                                       \
+        HTTPT_BEGIN(str_);                                     \
+        HTTPT_IS_EQUAL_INT(parser.status_code, status_code_);  \
+        HTTPT_END();                                           \
+    } while (0)
+
+    HTTPT_REQUEST_LINE("GET / HTTP/1.0\r\n\r\n",
+                       HTTP_GET, "/", HTTP_1_0);
+    HTTPT_REQUEST_LINE("POST / HTTP/1.1\r\n\r\n",
+                       HTTP_POST, "/", HTTP_1_1);
+    HTTPT_REQUEST_LINE("GET   /  HTTP/1.0\r\n\r\n",
+                       HTTP_GET, "/", HTTP_1_0);
+    HTTPT_REQUEST_LINE("GET /foo HTTP/1.0\r\n\r\n",
+                       HTTP_GET, "/foo", HTTP_1_0);
+
+    /* Invalid method */
+    HTTPT_INVALID_REQUEST_LINE("G\r / HTTP/1.0\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_REQUEST_LINE("a.b / HTTP/1.0\r\n\r\n", HTTP_NOT_IMPLEMENTED);
+    HTTPT_INVALID_REQUEST_LINE("FOO / HTTP/1.0\r\n\r\n", HTTP_NOT_IMPLEMENTED);
+
+    /* Invalid URI */
+    HTTPT_INVALID_REQUEST_LINE("GET HTTP/1.0\r\n\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_REQUEST_LINE("GET /\r HTTP/1.0\r\n\r\n", HTTP_BAD_REQUEST);
+
+    /* Invalid version */
+    HTTPT_INVALID_REQUEST_LINE("GET / \r\n\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_REQUEST_LINE("GET / 42\r\n\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_REQUEST_LINE("GET / HTTP/4.2\r\n\r\n",
+                               HTTP_HTTP_VERSION_NOT_SUPPORTED);
+
+#undef HTTPT_REQUEST_LINE
+#undef HTTPT_INVALID_REQUEST_LINE
 
     /* Headers */
     /* TODO */

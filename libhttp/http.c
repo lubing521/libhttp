@@ -450,7 +450,7 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
             found = true;
             break;
         } else if (*ptr == '\r' || *ptr == '\n') {
-            HTTP_ERROR(HTTP_NOT_IMPLEMENTED, "invalid character in request uri");
+            HTTP_ERROR(HTTP_BAD_REQUEST, "invalid character in request uri");
         }
 
         ptr++;
