@@ -298,8 +298,11 @@ http_sconnection_setup(struct http_server *server, int sock) {
         goto error;
     }
 
-    if (http_parser_init(&connection->parser) == -1)
+    if (http_parser_init(&connection->parser, HTTP_MSG_REQUEST,
+                         &server->cfg) == -1) {
         goto error;
+    }
+
     connection->parser.msg.type = HTTP_MSG_REQUEST;
     connection->parser.cfg = &server->cfg;
 
@@ -449,9 +452,6 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         parser = &connection->parser;
         msg = &parser->msg;
 
-        parser->msg.type = HTTP_MSG_REQUEST;
-        parser->cfg = &connection->server->cfg;
-
         ret = http_msg_parse(connection->rbuf, parser);
         if (ret == -1) {
             http_sconnection_error(connection, "cannot parse request: %s",
@@ -469,16 +469,33 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                                    parser->errmsg);
             http_sconnection_http_error(connection, parser->status_code);
             return;
+        } else if (parser->state == HTTP_PARSER_DONE) {
+            const char *method_str, *version_str;
+
+            method_str = http_method_to_string(msg->u.request.method);
+            version_str = http_version_to_string(msg->u.request.version);
+
+            http_sconnection_trace(connection, "%s %s %s",
+                                   method_str, msg->u.request.uri, version_str);
+            for (size_t i = 0; i < msg->nb_headers; i++) {
+                struct http_header *header;
+
+                header = msg->headers + i;
+                http_sconnection_trace(connection, "%s: %s",
+                                       header->name, header->value);
+            }
+
+            /* XXX Temporary */
+            http_sconnection_http_error(connection, HTTP_SERVICE_UNAVAILABLE);
+
+            if (http_parser_reset(parser, HTTP_MSG_REQUEST,
+                                  &connection->server->cfg) == -1) {
+                http_sconnection_error(connection, "cannot reset parser: %s",
+                                       http_get_error());
+                http_sconnection_close(connection);
+                return;
+            }
         }
-
-        http_sconnection_trace(connection, "%s %s %s",
-                               http_method_to_string(msg->u.request.method),
-                               msg->u.request.uri,
-                               http_version_to_string(msg->u.request.version));
-
-        /* XXX Temporary */
-        http_sconnection_http_error(connection, HTTP_SERVICE_UNAVAILABLE);
-        return;
     }
 }
 

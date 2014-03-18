@@ -19,6 +19,8 @@
 #include "http.h"
 #include "internal.h"
 
+static bool http_is_token_char(unsigned char);
+
 const char *
 http_version_to_string(enum http_version version) {
     static const char *strings[] = {
@@ -109,6 +111,126 @@ http_status_code_to_reason_phrase(enum http_status_code status_code) {
     return strings[status_code];
 }
 
+char *
+http_decode_header_value(const char *str, size_t sz) {
+    char *value;
+    size_t nb_chars;
+    size_t value_sz;
+
+    size_t last_non_sp;
+
+    const char *iptr;
+    size_t ilen;
+
+#define HTTP_WRITE_CHAR(c_)                        \
+    do {                                           \
+        if (nb_chars + 1 >= value_sz) {            \
+            value_sz *= 2;                         \
+            value = http_realloc(value, value_sz); \
+            if (!value)                            \
+                goto error;                        \
+        }                                          \
+                                                   \
+        value[nb_chars++] = c_;                    \
+    } while (0)
+
+    nb_chars = 0;
+    value_sz = sz;
+    value = http_malloc(sz);
+    if (!value)
+        goto error;
+
+    last_non_sp = 0;
+
+    iptr = str;
+    ilen = sz;
+
+    while (ilen > 0) {
+        if (*iptr == '\r') {
+            /* RFC 2616 4.2: Any LWS that occurs between field-content MAY be
+             * replaced with a single SP. */
+            if (ilen < 3) {
+                http_set_error("truncated linear whitespace");
+                goto error;
+            }
+
+            if (iptr[1] == '\n' && (iptr[2] == ' ' || iptr[2] == '\t')) {
+                iptr += 3;
+                ilen -= 3;
+
+                HTTP_WRITE_CHAR(' ');
+
+                while (ilen > 0 && *iptr == ' ') {
+                    iptr++;
+                    ilen--;
+                }
+            } else {
+                http_set_error("invalid linear whitespace");
+                goto error;
+            }
+        } else {
+            HTTP_WRITE_CHAR(*iptr);
+
+            if (*iptr != ' ')
+                last_non_sp = nb_chars;
+
+            iptr++;
+            ilen--;
+        }
+    }
+
+    value[last_non_sp] = '\0';
+    return value;
+
+error:
+    http_free(value);
+    return NULL;
+}
+
+void
+http_header_init(struct http_header *header) {
+    memset(header, 0, sizeof(struct http_header));
+}
+
+void
+http_header_free(struct http_header *header) {
+    if (!header)
+        return;
+
+    http_free(header->name);
+    http_free(header->value);
+
+    memset(header, 0, sizeof(struct http_header));
+}
+
+int
+http_msg_add_header(struct http_msg *msg, const struct http_header *header) {
+    struct http_header *headers;
+    size_t sz;
+
+    if (msg->nb_headers == 0) {
+        sz = 1;
+        headers = http_malloc(sizeof(struct http_header));
+        if (!headers)
+            return -1;
+
+        msg->headers_sz = sz;
+        msg->headers = headers;
+    } else if (msg->nb_headers + 1 > msg->headers_sz) {
+        sz = msg->headers_sz * 2;
+        headers = http_realloc(msg->headers,
+                               sz * sizeof(struct http_header));
+        if (!headers)
+            return -1;
+
+        msg->headers_sz = sz;
+        msg->headers = headers;
+    }
+
+    msg->headers[msg->nb_headers++] = *header;
+    return 0;
+}
+
 void
 http_msg_free(struct http_msg *msg) {
     if (!msg)
@@ -123,13 +245,20 @@ http_msg_free(struct http_msg *msg) {
         break;
     }
 
+    for (size_t i = 0; i < msg->nb_headers; i++)
+        http_header_free(msg->headers + i);
+    http_free(msg->headers);
+
     memset(msg, 0, sizeof(struct http_msg));
 }
 
 int
-http_parser_init(struct http_parser *parser) {
+http_parser_init(struct http_parser *parser, enum http_msg_type msg_type,
+                 const struct http_cfg *cfg) {
     memset(parser, 0, sizeof(struct http_parser));
 
+    parser->cfg = cfg;
+    parser->msg.type = msg_type;
     parser->state = HTTP_PARSER_START;
 
     return 0;
@@ -143,6 +272,13 @@ http_parser_free(struct http_parser *parser) {
     http_msg_free(&parser->msg);
 
     memset(parser, 0, sizeof(struct http_parser));
+}
+
+int
+http_parser_reset(struct http_parser *parser, enum http_msg_type msg_type,
+                  const struct http_cfg *cfg) {
+    http_parser_free(parser);
+    return http_parser_init(parser, msg_type, cfg);
 }
 
 void
@@ -185,6 +321,46 @@ http_msg_parse(struct bf_buffer *buf, struct http_parser *parser) {
     }
 }
 
+/* These macros are helpers for parsers, and depend on three variables:
+ *
+ * - struct http_parser *parser: the current parser;
+ * - const char *ptr: a pointer to the buffer being parsed;
+ * - size_t len: the number of bytes left in the current buffer.
+ */
+
+#define HTTP_ERROR(status_code_, fmt_, ...)                           \
+    do {                                                             \
+        http_parser_fail(parser, status_code_, fmt_, ##__VA_ARGS__); \
+        return 1;                                                    \
+    } while (0)
+
+#define HTTP_SKIP_MULTIPLE_SP()      \
+    while (len > 0 && *ptr == ' ') { \
+        ptr++;                       \
+        len--;                       \
+    }
+
+#define HTTP_SKIP_CRLF()                                   \
+    if (len >= 2 && ptr[0] == '\r' && ptr[1] == '\n') {    \
+        ptr += 2;                                          \
+        len -= 2;                                          \
+    }
+
+#define HTTP_SKIP_MULTIPLE_CRLF()                          \
+    while (len >= 2 && ptr[0] == '\r' && ptr[1] == '\n') { \
+        ptr += 2;                                          \
+        len -= 2;                                          \
+    }
+
+#define HTTP_SKIP_LWS()                                    \
+    do {                                                   \
+        HTTP_SKIP_CRLF();                                  \
+        while (len > 0 && (*ptr == ' ' || *ptr == '\t')) { \
+            ptr++;                                         \
+            len--;                                         \
+        }                                                  \
+    } while (0)
+
 int
 http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
     struct http_msg *msg;
@@ -197,27 +373,9 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
     ptr = bf_buffer_data(buf);
     len = bf_buffer_length(buf);
 
-#define HTTP_ERROR(status_code_, fmt_, ...)                           \
-    do {                                                             \
-        http_parser_fail(parser, status_code_, fmt_, ##__VA_ARGS__); \
-        return 1;                                                    \
-    } while (0)
-
-#define HTTP_SKIP_SP()               \
-    while (len > 0 && *ptr == ' ') { \
-        ptr++;                       \
-        len--;                       \
-    }
-
-#define HTTP_SKIP_CRLF()                                   \
-    while (len >= 2 && ptr[0] == '\r' && ptr[1] == '\n') { \
-        ptr += 2;                                          \
-        len -= 2;                                          \
-    }
-
     /* RFC 2616 4.1: In the interest of robustness, servers SHOULD ignore any
      * empty line(s) received where a Request-Line is expected. */
-    HTTP_SKIP_CRLF();
+    HTTP_SKIP_MULTIPLE_CRLF();
 
     /* Method */
     start = ptr;
@@ -257,7 +415,7 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
         return 0;
 
     /* Request URI */
-    HTTP_SKIP_SP();
+    HTTP_SKIP_MULTIPLE_SP();
 
     start = ptr;
     found = false;
@@ -283,12 +441,12 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
         return 0;
 
     /* HTTP version */
-    HTTP_SKIP_SP();
+    HTTP_SKIP_MULTIPLE_SP();
 
     start = ptr;
     found = false;
     while (len > 0) {
-        if (*ptr == '\r' || *ptr == '\n') {
+        if (*ptr == '\r') {
             const char *prefix;
             size_t prefix_sz;
 
@@ -328,10 +486,6 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
 
     HTTP_SKIP_CRLF();
 
-#undef HTTP_ERROR
-#undef HTTP_SKIP_SP
-#undef HTTP_SKIP_CRLF
-
     bf_buffer_skip(buf, bf_buffer_length(buf) - len);
 
     parser->state = HTTP_PARSER_HEADER;
@@ -340,15 +494,152 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
 
 int
 http_msg_parse_status_line(struct bf_buffer *buf, struct http_parser *parser) {
+    /* TODO */
     return 0;
 }
 
 int
 http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
-    return 0;
+    struct http_msg *msg;
+    const char *ptr, *start;
+    struct http_header header;
+    size_t len, toklen;
+    bool found;
+
+    http_header_init(&header);
+
+    msg = &parser->msg;
+
+    ptr = bf_buffer_data(buf);
+    len = bf_buffer_length(buf);
+
+    if (len >= 2 && ptr[0] == '\r' && ptr[1] == '\n') {
+        bf_buffer_skip(buf, 2);
+
+        parser->state = HTTP_PARSER_BODY;
+        return 1;
+    }
+
+    /* Name */
+    start = ptr;
+    found = false;
+    while (len > 0) {
+        if (*ptr == ':') {
+            toklen = (size_t)(ptr - start);
+
+            header.name = http_strndup(start, toklen);
+            if (!header.name)
+                return -1;
+
+            found = true;
+            break;
+        } else if (!http_is_token_char((unsigned char)*ptr)) {
+            HTTP_ERROR(HTTP_BAD_REQUEST, 
+                       "invalid character \\%hhu in header name",
+                       (unsigned char)(*ptr));
+        }
+
+        ptr++;
+        len--;
+    }
+
+    if (!found) {
+        http_header_free(&header);
+        return 0;
+    }
+
+    ptr++;
+    len--;
+
+    /* Value */
+    HTTP_SKIP_MULTIPLE_SP();
+
+    start = ptr;
+    found = false;
+    while (len > 0) {
+        if (*ptr == '\r') {
+            if (len < 3) {
+                http_header_free(&header);
+                return 0;
+            }
+
+            if (ptr[1] == '\n' && (ptr[2] == ' ' || ptr[2] == '\t')) {
+                /* The header value continues next line */
+                HTTP_SKIP_LWS();
+                continue;
+            } else {
+                toklen = (size_t)(ptr - start);
+
+                header.value = http_decode_header_value(start, toklen);
+                if (!header.value)
+                    return -1;
+
+                found = true;
+                break;
+            }
+        }
+
+        ptr++;
+        len--;
+    }
+
+    if (!found) {
+        http_header_free(&header);
+        return 0;
+    }
+
+    HTTP_SKIP_CRLF();
+
+    if (http_msg_add_header(msg, &header) == -1) {
+        http_header_free(&header);
+        return -1;
+    }
+
+    bf_buffer_skip(buf, bf_buffer_length(buf) - len);
+    return 1;
 }
 
 int
 http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
-    return 0;
+    struct http_msg *msg;
+    const char *ptr;
+    size_t len;
+
+    msg = &parser->msg;
+
+    ptr = bf_buffer_data(buf);
+    len = bf_buffer_length(buf);
+
+    /* XXX temporary */
+    parser->state = HTTP_PARSER_DONE;
+    return 1;
+}
+
+#undef HTTP_ERROR
+#undef HTTP_SKIP_MULTIPLE_SP
+#undef HTTP_SKIP_CRLF
+#undef HTTP_SKIP_MULTIPLE_CRLF
+#undef HTTP_SKIP_LWS
+
+static bool
+http_is_token_char(unsigned char c) {
+    static uint32_t table[8] = {
+        0x00000000, /*   0- 31                                          */
+
+        0x03ff6cfa, /*  32- 63  ?>=< ;:98 7654 3210 /.-, +*)( `&%$ #"!  */
+                    /*          0000 0011 1111 1111 0110 1100 1111 1010 */
+
+        0xc7ffffee, /*  64- 95  _^]\ [ZYX WVUT SRQP ONML KJIH GFED CBA@ */
+                    /*          1100 0111 1111 1111 1111 1111 1110 1110 */
+
+        0x67ffffff, /*  96-127   ~}| {zyx wvut srqp onml kjih gfed cba` */
+                    /*          0101 0111 1111 1111 1111 1111 1111 1111 */
+
+        0x00000000, /* 128-159                                          */
+        0x00000000, /* 160-191                                          */
+        0x00000000, /* 192-223                                          */
+        0x00000000, /* 224-255                                          */
+    };
+
+    return table[c / 32] & (uint32_t)(1 << (c % 32));
 }

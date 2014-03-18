@@ -38,14 +38,21 @@ void http_free(void *);
 char *http_strdup(const char *);
 char *http_strndup(const char *, size_t);
 
-size_t http_memspn(const char *, size_t, const char *);
-size_t http_memcspn(const char *, size_t, const char *);
-
 #ifndef NDEBUG
 const char *http_fmt_data(const char *, size_t);
 #endif
 
 /* Protocol */
+char *http_decode_header_value(const char *, size_t);
+
+struct http_header {
+    char *name;
+    char *value;
+};
+
+void http_header_init(struct http_header *);
+void http_header_free(struct http_header *);
+
 struct http_msg {
     enum http_msg_type type;
 
@@ -63,12 +70,18 @@ struct http_msg {
         } response;
     } u;
 
-    /* TODO Headers */
+    struct http_header *headers;
+    size_t nb_headers;
+    size_t headers_sz;
+
     /* TODO Body */
 };
 
 void http_msg_free(struct http_msg *);
 
+int http_msg_add_header(struct http_msg *, const struct http_header *);
+
+/* Parser */
 enum http_parser_state {
     HTTP_PARSER_START,
     HTTP_PARSER_HEADER,
@@ -88,8 +101,11 @@ struct http_parser {
     const struct http_cfg *cfg;
 };
 
-int http_parser_init(struct http_parser *);
+int http_parser_init(struct http_parser *, enum http_msg_type,
+                     const struct http_cfg *);
 void http_parser_free(struct http_parser *);
+int http_parser_reset(struct http_parser *, enum http_msg_type,
+                      const struct http_cfg *);
 
 void http_parser_fail(struct http_parser *, enum http_status_code,
                       const char *, ...)
