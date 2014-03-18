@@ -38,15 +38,14 @@ void http_free(void *);
 char *http_strdup(const char *);
 char *http_strndup(const char *, size_t);
 
+size_t http_memspn(const char *, size_t, const char *);
+size_t http_memcspn(const char *, size_t, const char *);
+
+#ifndef NDEBUG
+const char *http_fmt_data(const char *, size_t);
+#endif
+
 /* Protocol */
-enum http_parsing_state {
-    HTTP_PARSING_BEFORE_START_LINE,
-    HTTP_PARSING_BEFORE_HEADER,
-    HTTP_PARSING_BEFORE_BODY,
-
-    HTTP_PARSING_DONE,
-};
-
 struct http_msg {
     enum http_msg_type type;
 
@@ -66,26 +65,40 @@ struct http_msg {
 
     /* TODO Headers */
     /* TODO Body */
-
-    enum http_parsing_state parsing_state;
 };
 
 void http_msg_free(struct http_msg *);
 
-int http_msg_parse(struct http_msg *, struct bf_buffer *,
-                   const struct http_cfg *,
-                   enum http_status_code *);
-int http_msg_parse_request_line(struct http_msg *, struct bf_buffer *,
-                                const struct http_cfg *,
-                                enum http_status_code *);
-int http_msg_parse_status_line(struct http_msg *, struct bf_buffer *,
-                               const struct http_cfg *,
-                               enum http_status_code *);
-int http_msg_parse_headers(struct http_msg *, struct bf_buffer *,
-                           const struct http_cfg *,
-                           enum http_status_code *);
-int http_msg_parse_body(struct http_msg *, struct bf_buffer *,
-                        const struct http_cfg *,
-                        enum http_status_code *);
+enum http_parser_state {
+    HTTP_PARSER_START,
+    HTTP_PARSER_HEADER,
+    HTTP_PARSER_BODY,
+
+    HTTP_PARSER_ERROR,
+    HTTP_PARSER_DONE,
+};
+
+struct http_parser {
+    enum http_parser_state state;
+
+    struct http_msg msg;
+    enum http_status_code status_code;
+    char errmsg[HTTP_ERROR_BUFSZ];
+
+    const struct http_cfg *cfg;
+};
+
+int http_parser_init(struct http_parser *);
+void http_parser_free(struct http_parser *);
+
+void http_parser_fail(struct http_parser *, enum http_status_code,
+                      const char *, ...)
+    __attribute__((format(printf, 3, 4)));
+
+int http_msg_parse(struct bf_buffer *, struct http_parser *);
+int http_msg_parse_request_line(struct bf_buffer *, struct http_parser *);
+int http_msg_parse_status_line(struct bf_buffer *, struct http_parser *);
+int http_msg_parse_headers(struct bf_buffer *, struct http_parser *);
+int http_msg_parse_body(struct bf_buffer *, struct http_parser *);
 
 #endif

@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <ctype.h>
 #include <string.h>
 
 #include "http.h"
@@ -34,3 +35,120 @@ http_strndup(const char *str, size_t len) {
 
     return nstr;
 }
+
+size_t
+http_memspn(const char *buf, size_t sz, const char *accept) {
+    uint64_t table[4];
+    size_t n;
+
+    if (*accept == '\0')
+        return sz;
+
+    table[0] = 0;
+    table[1] = 0;
+    table[2] = 0;
+    table[3] = 0;
+
+    do {
+        uint8_t c;
+
+        c = (uint8_t)*accept;
+        table[c >> 6] |= (1 << (c & 63));
+
+        accept++;
+    } while (*accept != '\0');
+
+    n = 0;
+    for (size_t i = 0; i < sz; i++) {
+        uint8_t c;
+
+        c = (uint8_t)buf[i];
+        if (!(table[c >> 6] & (1 << (c & 63))))
+            return n;
+    }
+
+    return sz;
+}
+
+size_t
+http_memcspn(const char *buf, size_t sz, const char *reject) {
+    size_t reject_sz, n;
+    uint64_t table[4];
+
+    if (*reject == '\0')
+        return sz;
+
+    reject_sz = strlen(reject);
+    if (reject_sz == 1) {
+        const char *ptr;
+
+        ptr = memchr(buf, reject[0], sz);
+        if (!ptr)
+            return sz;
+
+        return (size_t)(ptr - buf);
+    }
+
+    table[0] = 0;
+    table[1] = 0;
+    table[2] = 0;
+    table[3] = 0;
+
+    do {
+        uint8_t c;
+
+        c = (uint8_t)*reject;
+        table[c >> 6] |= (1 << (c & 63));
+
+        reject++;
+    } while (*reject != '\0');
+
+    n = 0;
+    for (size_t i = 0; i < sz; i++) {
+        uint8_t c;
+
+        c = (uint8_t)buf[i];
+        if (table[c >> 6] & (1 << (c & 63)))
+            return n;
+    }
+
+    return sz;
+}
+
+#ifndef NDEBUG
+const char *
+http_fmt_data(const char *buf, size_t sz) {
+    static __thread char tmp[1024];
+    const char *iptr;
+    char *optr;
+    size_t ilen, olen;
+
+    iptr = buf;
+    ilen = sz;
+
+    optr = tmp;
+    olen = sizeof(tmp) - 1;
+
+    while (ilen > 0 && olen > 0) {
+        if (isprint((unsigned char)*iptr)) {
+            *optr++ = *iptr;
+            olen--;
+        } else {
+            int ret;
+
+            ret = snprintf(optr, olen, "\\%hhu", (unsigned char)*iptr);
+            if (ret == -1 || (size_t)ret >= olen)
+                break;
+
+            optr += ret;
+            olen -= (size_t)ret;
+        }
+
+        iptr++;
+        ilen--;
+    }
+
+    *optr = '\0';
+    return tmp;
+}
+#endif

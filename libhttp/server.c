@@ -67,6 +67,8 @@ struct http_sconnection {
     char port[NI_MAXSERV];
 
     bool shutting_down;
+
+    struct http_parser parser;
 };
 
 static struct http_sconnection * http_sconnection_setup(struct http_server *,
@@ -296,6 +298,11 @@ http_sconnection_setup(struct http_server *server, int sock) {
         goto error;
     }
 
+    if (http_parser_init(&connection->parser) == -1)
+        goto error;
+    connection->parser.msg.type = HTTP_MSG_REQUEST;
+    connection->parser.cfg = &server->cfg;
+
     return connection;
 
 error:
@@ -407,6 +414,8 @@ http_sconnection_close(struct http_sconnection *connection) {
     bf_buffer_delete(connection->rbuf);
     bf_buffer_delete(connection->wbuf);
 
+    http_parser_free(&connection->parser);
+
     memset(connection, 0, sizeof(struct http_sconnection));
     http_free(connection);
 }
@@ -432,43 +441,44 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         return;
     }
 
-    http_sconnection_trace(connection, "%zi bytes read", ret);
-
     for (;;) {
-        struct http_msg msg;
-        enum http_status_code http_error;
+        struct http_parser *parser;
+        struct http_msg *msg;
         int ret;
 
-        memset(&msg, 0, sizeof(struct http_msg));
+        parser = &connection->parser;
+        msg = &parser->msg;
 
-        msg.type = HTTP_MSG_REQUEST;
-        msg.parsing_state = HTTP_PARSING_BEFORE_START_LINE;
+        parser->msg.type = HTTP_MSG_REQUEST;
+        parser->cfg = &connection->server->cfg;
 
-        ret = http_msg_parse(&msg, connection->rbuf, &connection->server->cfg,
-                             &http_error);
+        ret = http_msg_parse(connection->rbuf, parser);
         if (ret == -1) {
             http_sconnection_error(connection, "cannot parse request: %s",
                                    http_get_error());
-            if (http_error > 0) {
-                http_sconnection_http_error(connection, http_error);
-            } else {
-                http_sconnection_close(connection);
-            }
+            http_sconnection_http_error(connection,
+                                        HTTP_INTERNAL_SERVER_ERROR);
             return;
         }
 
         if (ret == 0)
             break;
 
-        http_sconnection_trace(connection, "%s %s %s",
-                               http_method_to_string(msg.u.request.method),
-                               msg.u.request.uri,
-                               http_version_to_string(msg.u.request.version));
+        if (parser->state == HTTP_PARSER_ERROR) {
+            http_sconnection_error(connection, "cannot parse request: %s",
+                                   parser->errmsg);
+            http_sconnection_http_error(connection, parser->status_code);
+            return;
+        }
 
-        http_msg_free(&msg);
+        http_sconnection_trace(connection, "%s %s %s",
+                               http_method_to_string(msg->u.request.method),
+                               msg->u.request.uri,
+                               http_version_to_string(msg->u.request.version));
 
         /* XXX Temporary */
         http_sconnection_http_error(connection, HTTP_SERVICE_UNAVAILABLE);
+        return;
     }
 }
 
@@ -486,8 +496,6 @@ http_sconnection_on_write_event(evutil_socket_t sock, short events, void *arg) {
         http_sconnection_close(connection);
         return;
     }
-
-    http_sconnection_trace(connection, "%zi bytes written", ret);
 
     bf_buffer_skip(connection->wbuf, (size_t)ret);
     if (bf_buffer_length(connection->wbuf) == 0) {

@@ -48,14 +48,11 @@ enum http_version {
 const char *http_version_to_string(enum http_version);
 
 enum http_method {
-    HTTP_OPTIONS = 0,
-    HTTP_GET,
-    HTTP_HEAD,
+    HTTP_GET = 0,
     HTTP_POST,
+    HTTP_HEAD,
     HTTP_PUT,
     HTTP_DELETE,
-    HTTP_TRACE,
-    HTTP_CONNECT,
 };
 
 const char *http_method_to_string(enum http_method);
