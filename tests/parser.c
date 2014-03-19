@@ -57,7 +57,9 @@ main(int argc, char **argv) {
         bf_buffer_delete(buf);     \
     } while (0)
 
-    /* Request lines */
+    /* --------------------------------------------------------------------
+     *  Request lines
+     * -------------------------------------------------------------------- */
 #define HTTPT_REQUEST_LINE(str_, method_, uri_, version_)       \
     do {                                                        \
         HTTPT_BEGIN(str_);                                      \
@@ -101,8 +103,60 @@ main(int argc, char **argv) {
 #undef HTTPT_REQUEST_LINE
 #undef HTTPT_INVALID_REQUEST_LINE
 
-    /* Headers */
-    /* TODO */
+    /* --------------------------------------------------------------------
+     *  Headers
+     * -------------------------------------------------------------------- */
+#define HTTPT_BEGIN_HEADERS(str_) \
+    HTTPT_BEGIN("GET / HTTP/1.1\r\n" str_)
+
+#define HTTPT_INVALID_HEADER(str_, status_code_)               \
+    do {                                                       \
+        HTTPT_BEGIN("GET / HTTP/1.1\r\n" str_);                \
+        HTTPT_IS_EQUAL_INT(parser.status_code, status_code_);  \
+        HTTPT_END();                                           \
+    } while (0)
+
+#define HTTPT_IS_EQUAL_HEADER(idx_, name_, value_)               \
+    do {                                                         \
+        HTTPT_IS_EQUAL_STRING(msg->headers[idx_].name, name_);   \
+        HTTPT_IS_EQUAL_STRING(msg->headers[idx_].value, value_); \
+    } while (0)
+
+    HTTPT_BEGIN_HEADERS("Foo: bar\r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(msg->nb_headers, 1);
+    HTTPT_IS_EQUAL_HEADER(0, "Foo", "bar");
+    HTTPT_END();
+
+    HTTPT_BEGIN_HEADERS("Key1: foo\r\nKey2: bar\r\nKey3: hello world\r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(msg->nb_headers, 3);
+    HTTPT_IS_EQUAL_HEADER(0, "Key1", "foo");
+    HTTPT_IS_EQUAL_HEADER(1, "Key2", "bar");
+    HTTPT_IS_EQUAL_HEADER(2, "Key3", "hello world");
+    HTTPT_END();
+
+    HTTPT_BEGIN_HEADERS("Key1:  foo  \r\nKey2:  hello   world \r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(msg->nb_headers, 2);
+    HTTPT_IS_EQUAL_HEADER(0, "Key1", "foo");
+    HTTPT_IS_EQUAL_HEADER(1, "Key2", "hello   world");
+    HTTPT_END();
+
+    HTTPT_BEGIN_HEADERS("Key1: one\r\n\ttwo\t  \r\n \t three\r\nKey2: foo\r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(msg->nb_headers, 2);
+    HTTPT_IS_EQUAL_HEADER(0, "Key1", "one two three");
+    HTTPT_IS_EQUAL_HEADER(1, "Key2", "foo");
+    HTTPT_END();
+
+    /* Invalid header name */
+    HTTPT_INVALID_HEADER("Key/: foo\r\n\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_HEADER("[Key]: foo\r\n\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_HEADER("Key\r\n: foo\r\n\r\n", HTTP_BAD_REQUEST);
+
+    /* Invalid separator */
+    HTTPT_INVALID_HEADER("Key foo\r\n\r\n", HTTP_BAD_REQUEST);
+
+#undef HTTPT_BEGIN_HEADERS
+#undef HTTPT_INVALID_HEADER
+#undef HTTPT_IS_EQUAL_HEADER
 
 #undef HTTPT_BEGIN
 #undef HTTPT_END
