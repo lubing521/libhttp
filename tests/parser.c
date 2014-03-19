@@ -29,6 +29,7 @@ main(int argc, char **argv) {
     struct http_msg *msg;
 
     cfg = http_server_default_cfg;
+    cfg.u.server.max_request_uri_length = 8;
 
 #define HTTPT_BEGIN(str_)                                    \
     do {                                                     \
@@ -93,6 +94,9 @@ main(int argc, char **argv) {
     /* Invalid URI */
     HTTPT_INVALID_REQUEST_LINE("GET HTTP/1.0\r\n\r\n", HTTP_BAD_REQUEST);
     HTTPT_INVALID_REQUEST_LINE("GET /\r HTTP/1.0\r\n\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_REQUEST_LINE("GET /abcdefgh HTTP/1.0\r\n\r\n",
+                               HTTP_REQUEST_URI_TOO_LONG);
+    HTTPT_INVALID_REQUEST_LINE("GET /abcdefgh", HTTP_REQUEST_URI_TOO_LONG);
 
     /* Invalid version */
     HTTPT_INVALID_REQUEST_LINE("GET / \r\n\r\n", HTTP_BAD_REQUEST);

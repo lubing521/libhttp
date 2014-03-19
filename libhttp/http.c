@@ -392,11 +392,13 @@ http_msg_parse(struct bf_buffer *buf, struct http_parser *parser) {
 
 int
 http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
+    const struct http_cfg *cfg;
     struct http_msg *msg;
     const char *ptr, *start;
     size_t len, toklen;
     bool found;
 
+    cfg = parser->cfg;
     msg = &parser->msg;
 
     ptr = bf_buffer_data(buf);
@@ -451,6 +453,9 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
     while (len > 0) {
         if (*ptr == ' ') {
             toklen = (size_t)(ptr - start);
+            if (toklen > cfg->u.server.max_request_uri_length) {
+                HTTP_ERROR(HTTP_REQUEST_URI_TOO_LONG, "request uri too large");
+            }
 
             msg->u.request.uri = http_strndup(start, toklen);
             if (!msg->u.request.uri)
@@ -466,8 +471,12 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
         len--;
     }
 
-    if (!found)
+    if (!found) {
+        if ((size_t)(ptr - start) > cfg->u.server.max_request_uri_length)
+            HTTP_ERROR(HTTP_REQUEST_URI_TOO_LONG, "request uri too large");
+
         return 0;
+    }
 
     /* HTTP version */
     HTTP_SKIP_MULTIPLE_SP();
