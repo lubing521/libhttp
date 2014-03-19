@@ -162,17 +162,18 @@ main(int argc, char **argv) {
     HTTPT_INVALID_HEADER("Key/: foo\r\n\r\n", HTTP_BAD_REQUEST);
     HTTPT_INVALID_HEADER("[Key]: foo\r\n\r\n", HTTP_BAD_REQUEST);
     HTTPT_INVALID_HEADER("Key\r\n: foo\r\n\r\n", HTTP_BAD_REQUEST);
-    HTTPT_INVALID_HEADER("ALargeKey: foo\r\n\r\n", HTTP_BAD_REQUEST);
-    HTTPT_INVALID_HEADER("ALargeKey", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_HEADER("ALargeKey: foo\r\n\r\n",
+                         HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE);
+    HTTPT_INVALID_HEADER("ALargeKey", HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE);
 
     /* Invalid separator */
     HTTPT_INVALID_HEADER("Key foo\r\n\r\n", HTTP_BAD_REQUEST);
 
     /* Invalid header value */
     HTTPT_INVALID_HEADER("Key: AVeryLargeValueABCDEF\r\n\r\n",
-                         HTTP_BAD_REQUEST);
+                         HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE);
     HTTPT_INVALID_HEADER("Key: AVeryLargeValueABCDEF",
-                         HTTP_BAD_REQUEST);
+                         HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE);
 
 #undef HTTPT_BEGIN_HEADERS
 #undef HTTPT_INVALID_HEADER

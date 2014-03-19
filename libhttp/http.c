@@ -597,8 +597,10 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
     while (len > 0) {
         if (*ptr == ':') {
             toklen = (size_t)(ptr - start);
-            if (toklen > cfg->max_header_name_length)
-                HTTP_ERROR(HTTP_BAD_REQUEST, "header name too long");
+            if (toklen > cfg->max_header_name_length) {
+                HTTP_ERROR(HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE,
+                           "header name too long");
+            }
 
             header.name = http_strndup(start, toklen);
             if (!header.name)
@@ -619,8 +621,10 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
     if (!found) {
         http_header_free(&header);
 
-        if ((size_t)(ptr - start) > cfg->max_header_name_length)
-            HTTP_ERROR(HTTP_BAD_REQUEST, "header name too long");
+        if ((size_t)(ptr - start) > cfg->max_header_name_length) {
+            HTTP_ERROR(HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE,
+                       "header name too long");
+        }
 
         return 0;
     }
@@ -646,8 +650,10 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
                 continue;
             } else {
                 toklen = (size_t)(ptr - start);
-                if (toklen > cfg->max_header_value_length)
-                    HTTP_ERROR(HTTP_BAD_REQUEST, "header value too long");
+                if (toklen > cfg->max_header_value_length) {
+                    HTTP_ERROR(HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE,
+                               "header value too long");
+                }
 
                 header.value = http_decode_header_value(start, toklen);
                 if (!header.value)
@@ -665,8 +671,10 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
     if (!found) {
         http_header_free(&header);
 
-        if ((size_t)(ptr - start) > cfg->max_header_value_length)
-            HTTP_ERROR(HTTP_BAD_REQUEST, "header value too long");
+        if ((size_t)(ptr - start) > cfg->max_header_value_length) {
+            HTTP_ERROR(HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE,
+                       "header value too long");
+        }
 
         return 0;
     }
