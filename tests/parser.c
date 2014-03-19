@@ -28,8 +28,10 @@ main(int argc, char **argv) {
     struct http_parser parser;
     struct http_msg *msg;
 
-    cfg = http_server_default_cfg;
+    cfg = http_default_cfg;
     cfg.u.server.max_request_uri_length = 8;
+    cfg.max_header_name_length = 8;
+    cfg.max_header_value_length = 20;
 
 #define HTTPT_BEGIN(str_)                                    \
     do {                                                     \
@@ -90,6 +92,7 @@ main(int argc, char **argv) {
     HTTPT_INVALID_REQUEST_LINE("G\r / HTTP/1.0\r\n", HTTP_BAD_REQUEST);
     HTTPT_INVALID_REQUEST_LINE("a.b / HTTP/1.0\r\n\r\n", HTTP_NOT_IMPLEMENTED);
     HTTPT_INVALID_REQUEST_LINE("FOO / HTTP/1.0\r\n\r\n", HTTP_NOT_IMPLEMENTED);
+    HTTPT_INVALID_REQUEST_LINE("FOOBARBAZ", HTTP_NOT_IMPLEMENTED);
 
     /* Invalid URI */
     HTTPT_INVALID_REQUEST_LINE("GET HTTP/1.0\r\n\r\n", HTTP_BAD_REQUEST);
@@ -103,6 +106,8 @@ main(int argc, char **argv) {
     HTTPT_INVALID_REQUEST_LINE("GET / 42\r\n\r\n", HTTP_BAD_REQUEST);
     HTTPT_INVALID_REQUEST_LINE("GET / HTTP/4.2\r\n\r\n",
                                HTTP_HTTP_VERSION_NOT_SUPPORTED);
+    HTTPT_INVALID_REQUEST_LINE("GET / HELLOWORD",
+                               HTTP_HTTP_VERSION_NOT_SUPPORTED);
 
 #undef HTTPT_REQUEST_LINE
 #undef HTTPT_INVALID_REQUEST_LINE
@@ -110,8 +115,11 @@ main(int argc, char **argv) {
     /* --------------------------------------------------------------------
      *  Headers
      * -------------------------------------------------------------------- */
-#define HTTPT_BEGIN_HEADERS(str_) \
-    HTTPT_BEGIN("GET / HTTP/1.1\r\n" str_)
+#define HTTPT_BEGIN_HEADERS(str_)                  \
+    do {                                           \
+        HTTPT_BEGIN("GET / HTTP/1.1\r\n" str_);    \
+        HTTPT_IS_EQUAL_INT(parser.status_code, 0); \
+    } while (0)
 
 #define HTTPT_INVALID_HEADER(str_, status_code_)               \
     do {                                                       \
@@ -131,22 +139,22 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_HEADER(0, "Foo", "bar");
     HTTPT_END();
 
-    HTTPT_BEGIN_HEADERS("Key1: foo\r\nKey2: bar\r\nKey3: hello world\r\n\r\n");
+    HTTPT_BEGIN_HEADERS("Key1: foo\r\nKey2: bar\r\nKey3: he llo\r\n\r\n");
     HTTPT_IS_EQUAL_UINT(msg->nb_headers, 3);
     HTTPT_IS_EQUAL_HEADER(0, "Key1", "foo");
     HTTPT_IS_EQUAL_HEADER(1, "Key2", "bar");
-    HTTPT_IS_EQUAL_HEADER(2, "Key3", "hello world");
+    HTTPT_IS_EQUAL_HEADER(2, "Key3", "he llo");
     HTTPT_END();
 
-    HTTPT_BEGIN_HEADERS("Key1:  foo  \r\nKey2:  hello   world \r\n\r\n");
+    HTTPT_BEGIN_HEADERS("Key1:  foo  \r\nKey2:  he  llo \r\n\r\n");
     HTTPT_IS_EQUAL_UINT(msg->nb_headers, 2);
     HTTPT_IS_EQUAL_HEADER(0, "Key1", "foo");
-    HTTPT_IS_EQUAL_HEADER(1, "Key2", "hello   world");
+    HTTPT_IS_EQUAL_HEADER(1, "Key2", "he  llo");
     HTTPT_END();
 
-    HTTPT_BEGIN_HEADERS("Key1: one\r\n\ttwo\t  \r\n \t three\r\nKey2: foo\r\n\r\n");
+    HTTPT_BEGIN_HEADERS("Key1: one\r\n\the\t \r\n \tllo\r\nKey2: foo\r\n\r\n");
     HTTPT_IS_EQUAL_UINT(msg->nb_headers, 2);
-    HTTPT_IS_EQUAL_HEADER(0, "Key1", "one two three");
+    HTTPT_IS_EQUAL_HEADER(0, "Key1", "one he llo");
     HTTPT_IS_EQUAL_HEADER(1, "Key2", "foo");
     HTTPT_END();
 
@@ -154,9 +162,17 @@ main(int argc, char **argv) {
     HTTPT_INVALID_HEADER("Key/: foo\r\n\r\n", HTTP_BAD_REQUEST);
     HTTPT_INVALID_HEADER("[Key]: foo\r\n\r\n", HTTP_BAD_REQUEST);
     HTTPT_INVALID_HEADER("Key\r\n: foo\r\n\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_HEADER("ALargeKey: foo\r\n\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_HEADER("ALargeKey", HTTP_BAD_REQUEST);
 
     /* Invalid separator */
     HTTPT_INVALID_HEADER("Key foo\r\n\r\n", HTTP_BAD_REQUEST);
+
+    /* Invalid header value */
+    HTTPT_INVALID_HEADER("Key: AVeryLargeValueABCDEF\r\n\r\n",
+                         HTTP_BAD_REQUEST);
+    HTTPT_INVALID_HEADER("Key: AVeryLargeValueABCDEF",
+                         HTTP_BAD_REQUEST);
 
 #undef HTTPT_BEGIN_HEADERS
 #undef HTTPT_INVALID_HEADER

@@ -30,23 +30,6 @@
 #include "http.h"
 #include "internal.h"
 
-struct http_cfg http_server_default_cfg = {
-    .host = "localhost",
-    .port = "80",
-
-    .error_hook = NULL,
-    .trace_hook = NULL,
-    .hook_arg = NULL,
-
-    .u = {
-        .server = {
-            .connection_backlog = 5,
-
-            .max_request_uri_length = 2048,
-        }
-    }
-};
-
 static void http_server_error(struct http_server *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 static void http_server_trace(struct http_server *, const char *, ...)

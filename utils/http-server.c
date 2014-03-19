@@ -65,7 +65,7 @@ main(int argc, char **argv) {
         }
     }
 
-    cfg = http_server_default_cfg;
+    cfg = http_default_cfg;
     cfg.port = "8080";
     cfg.error_hook = https_on_error;
     cfg.trace_hook = https_on_trace;

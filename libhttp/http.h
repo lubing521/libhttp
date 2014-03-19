@@ -111,7 +111,7 @@ enum http_msg_type {
     HTTP_MSG_RESPONSE,
 };
 
-/* Server */
+/* Configuration */
 typedef void (*http_error_hook)(const char *, void *);
 typedef void (*http_trace_hook)(const char *, void *);
 
@@ -130,10 +130,14 @@ struct http_cfg {
             size_t max_request_uri_length;
         } server;
     } u;
+
+    size_t max_header_name_length;
+    size_t max_header_value_length;
 };
 
-extern struct http_cfg http_server_default_cfg;
+extern struct http_cfg http_default_cfg;
 
+/* Server */
 struct http_server *http_server_listen(const struct http_cfg *,
                                        struct event_base *);
 void http_server_shutdown(struct http_server *server);

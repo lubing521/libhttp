@@ -19,6 +19,26 @@
 #include "http.h"
 #include "internal.h"
 
+struct http_cfg http_default_cfg = {
+    .host = "localhost",
+    .port = "80",
+
+    .error_hook = NULL,
+    .trace_hook = NULL,
+    .hook_arg = NULL,
+
+    .u = {
+        .server = {
+            .connection_backlog = 5,
+
+            .max_request_uri_length = 2048,
+        }
+    },
+
+    .max_header_name_length = 128,
+    .max_header_value_length = 4096,
+};
+
 static bool http_is_token_char(unsigned char);
 
 const char *
@@ -442,8 +462,13 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
         len--;
     }
 
-    if (!found)
+    if (!found) {
+        /* The longest method is OPTIONS, i.e. eight characters */
+        if ((size_t)(ptr - start) > 8)
+            HTTP_ERROR(HTTP_NOT_IMPLEMENTED, "unsupported method");
+
         return 0;
+    }
 
     /* Request URI */
     HTTP_SKIP_MULTIPLE_SP();
@@ -519,8 +544,14 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
         len--;
     }
 
-    if (!found)
+    if (!found) {
+        /* The longest version string is HTTP/x.y with x < 9 and y < 9 */
+        if ((size_t)(ptr - start) > 8)
+            HTTP_ERROR(HTTP_HTTP_VERSION_NOT_SUPPORTED,
+                       "unsupported http version");
+
         return 0;
+    }
 
     HTTP_SKIP_CRLF();
 
@@ -538,6 +569,7 @@ http_msg_parse_status_line(struct bf_buffer *buf, struct http_parser *parser) {
 
 int
 http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
+    const struct http_cfg *cfg;
     struct http_msg *msg;
     const char *ptr, *start;
     struct http_header header;
@@ -546,6 +578,7 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
 
     http_header_init(&header);
 
+    cfg = parser->cfg;
     msg = &parser->msg;
 
     ptr = bf_buffer_data(buf);
@@ -564,6 +597,8 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
     while (len > 0) {
         if (*ptr == ':') {
             toklen = (size_t)(ptr - start);
+            if (toklen > cfg->max_header_name_length)
+                HTTP_ERROR(HTTP_BAD_REQUEST, "header name too long");
 
             header.name = http_strndup(start, toklen);
             if (!header.name)
@@ -583,6 +618,10 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
 
     if (!found) {
         http_header_free(&header);
+
+        if ((size_t)(ptr - start) > cfg->max_header_name_length)
+            HTTP_ERROR(HTTP_BAD_REQUEST, "header name too long");
+
         return 0;
     }
 
@@ -607,6 +646,8 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
                 continue;
             } else {
                 toklen = (size_t)(ptr - start);
+                if (toklen > cfg->max_header_value_length)
+                    HTTP_ERROR(HTTP_BAD_REQUEST, "header value too long");
 
                 header.value = http_decode_header_value(start, toklen);
                 if (!header.value)
@@ -623,6 +664,10 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
 
     if (!found) {
         http_header_free(&header);
+
+        if ((size_t)(ptr - start) > cfg->max_header_value_length)
+            HTTP_ERROR(HTTP_BAD_REQUEST, "header value too long");
+
         return 0;
     }
 
