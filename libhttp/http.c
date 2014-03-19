@@ -157,21 +157,30 @@ http_decode_header_value(const char *str, size_t sz) {
             if (iptr[1] == '\n' && (iptr[2] == ' ' || iptr[2] == '\t')) {
                 iptr += 3;
                 ilen -= 3;
-
-                HTTP_WRITE_CHAR(' ');
-
-                while (ilen > 0 && *iptr == ' ') {
-                    iptr++;
-                    ilen--;
-                }
             } else {
                 http_set_error("invalid linear whitespace");
                 goto error;
             }
+
+            /* Discard trailing SP/HT in the last line */
+            while (nb_chars != 0) {
+                if (value[nb_chars - 1] != ' ' && value[nb_chars - 1] != '\t')
+                    break;
+
+                nb_chars--;
+            }
+
+            /* Skip leading SP/HT in the next line */
+            while (ilen > 0 && (*iptr == ' ' || *iptr == '\t')) {
+                iptr++;
+                ilen--;
+            }
+
+            HTTP_WRITE_CHAR(' ');
         } else {
             HTTP_WRITE_CHAR(*iptr);
 
-            if (*iptr != ' ')
+            if (*iptr != ' ' && *iptr != '\t')
                 last_non_sp = nb_chars;
 
             iptr++;
