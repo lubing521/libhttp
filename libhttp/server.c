@@ -409,9 +409,11 @@ http_sconnection_close(struct http_sconnection *connection) {
 static void
 http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
     struct http_sconnection *connection;
+    const struct http_cfg *cfg;
     ssize_t ret;
 
     connection = arg;
+    cfg = &connection->server->cfg;
 
     ret = bf_buffer_read(connection->rbuf, connection->sock, BUFSIZ);
     if (ret == -1) {
@@ -422,7 +424,6 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
     }
 
     if (ret == 0) {
-        http_sconnection_trace(connection, "connection closed");
         http_sconnection_close(connection);
         return;
     }
@@ -453,30 +454,13 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             http_sconnection_http_error(connection, parser->status_code);
             return;
         } else if (parser->state == HTTP_PARSER_DONE) {
-            const char *method_str, *version_str;
-
-            method_str = http_method_to_string(msg->u.request.method);
-            version_str = http_version_to_string(msg->u.request.version);
-
-            http_sconnection_trace(connection, "%s %s %s",
-                                   method_str, msg->u.request.uri, version_str);
-            for (size_t i = 0; i < msg->nb_headers; i++) {
-                struct http_header *header;
-
-                header = msg->headers + i;
-                http_sconnection_trace(connection, "header %s: %s",
-                                       header->name, header->value);
-            }
-            if (msg->body_sz > 0) {
-                http_sconnection_trace(connection, "body: %zu bytes",
-                                       msg->body_sz);
-            }
+            if (cfg->request_hook)
+                cfg->request_hook(connection, msg, cfg->hook_arg);
 
             /* XXX Temporary */
             http_sconnection_http_error(connection, HTTP_SERVICE_UNAVAILABLE);
 
-            if (http_parser_reset(parser, HTTP_MSG_REQUEST,
-                                  &connection->server->cfg) == -1) {
+            if (http_parser_reset(parser, HTTP_MSG_REQUEST, cfg) == -1) {
                 http_sconnection_error(connection, "cannot reset parser: %s",
                                        http_get_error());
                 http_sconnection_close(connection);
@@ -675,6 +659,4 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
         http_sconnection_close(connection);
         return;
     }
-
-    http_sconnection_trace(connection, "connection accepted");
 }

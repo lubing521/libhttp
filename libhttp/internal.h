@@ -88,6 +88,8 @@ void http_msg_free(struct http_msg *);
 
 int http_msg_add_header(struct http_msg *, const struct http_header *);
 
+bool http_msg_can_have_body(const struct http_msg *);
+
 /* Parser */
 enum http_parser_state {
     HTTP_PARSER_START,

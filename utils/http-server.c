@@ -47,6 +47,8 @@ static void https_shutdown(void);
 static void https_on_signal(evutil_socket_t, short, void *);
 static void https_on_error(const char *, void *);
 static void https_on_trace(const char *, void *);
+static void https_on_request(struct http_sconnection *,
+                             const struct http_msg *, void *);
 
 int
 main(int argc, char **argv) {
@@ -69,6 +71,7 @@ main(int argc, char **argv) {
     cfg.port = "8080";
     cfg.error_hook = https_on_error;
     cfg.trace_hook = https_on_trace;
+    cfg.request_hook = https_on_request;
 
     https_initialize(&cfg);
 
@@ -161,4 +164,27 @@ https_on_error(const char *msg, void *arg) {
 static void
 https_on_trace(const char *msg, void *arg) {
     printf("%s\n", msg);
+}
+
+static void
+https_on_request(struct http_sconnection *connection,
+                 const struct http_msg *msg, void *arg) {
+    size_t nb_headers;
+
+    printf("\nrequest  %s %s %s\n",
+           http_method_to_string(http_request_method(msg)),
+           http_request_uri(msg),
+           http_version_to_string(http_request_version(msg)));
+
+    nb_headers = http_msg_nb_headers(msg);
+    for (size_t i = 0; i < nb_headers; i++) {
+        const struct http_header *header;
+
+        header = http_msg_header(msg, i);
+        printf("header   %s: %s\n",
+               http_header_name(header), http_header_value(header));
+    }
+
+    if (http_msg_body_sz(msg) > 0)
+        printf("body     %zu bytes\n", http_msg_body_sz(msg));
 }

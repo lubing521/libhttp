@@ -116,12 +116,28 @@ enum http_msg_type {
 };
 
 struct http_msg;
+struct http_header;
+struct http_sconnection;
 
+enum http_method http_request_method(const struct http_msg *);
+const char *http_request_uri(const struct http_msg *);
+enum http_version http_request_version(const struct http_msg *);
+
+size_t http_msg_nb_headers(const struct http_msg *);
+const struct http_header *http_msg_header(const struct http_msg *, size_t);
 const char *http_msg_get_header(const struct http_msg *, const char *);
+
+const char *http_msg_body(const struct http_msg *);
+size_t http_msg_body_sz(const struct http_msg *);
+
+const char *http_header_name(const struct http_header *);
+const char *http_header_value(const struct http_header *);
 
 /* Configuration */
 typedef void (*http_error_hook)(const char *, void *);
 typedef void (*http_trace_hook)(const char *, void *);
+typedef void (*http_request_hook)(struct http_sconnection *,
+                                  const struct http_msg *, void *);
 
 struct http_cfg {
     const char *host;
@@ -129,6 +145,7 @@ struct http_cfg {
 
     http_error_hook error_hook;
     http_trace_hook trace_hook;
+    http_request_hook request_hook;
     void *hook_arg;
 
     union {

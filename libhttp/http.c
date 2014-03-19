@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <assert.h>
 #include <string.h>
 
 #include "http.h"
@@ -133,11 +134,40 @@ http_status_code_to_reason_phrase(enum http_status_code status_code) {
     return strings[status_code];
 }
 
+
+enum http_method
+http_request_method(const struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_REQUEST);
+    return msg->u.request.method;
+}
+
+const char *
+http_request_uri(const struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_REQUEST);
+    return msg->u.request.uri;
+}
+
+enum http_version
+http_request_version(const struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_REQUEST);
+    return msg->u.request.version;
+}
+
+size_t
+http_msg_nb_headers(const struct http_msg *msg) {
+    return msg->nb_headers;
+}
+
+const struct http_header *
+http_msg_header(const struct http_msg *msg, size_t idx) {
+    assert(idx < msg->nb_headers);
+    return msg->headers + idx;
+}
+
 const char *
 http_msg_get_header(const struct http_msg *msg, const char *name) {
     for (size_t i = 0; i < msg->nb_headers; i++) {
         const struct http_header *header;
-
         header = msg->headers + i;
 
         /* RFC 2616 4.2: Field names are case-insensitive. */
@@ -146,6 +176,26 @@ http_msg_get_header(const struct http_msg *msg, const char *name) {
     }
 
     return NULL;
+}
+
+const char *
+http_msg_body(const struct http_msg *msg) {
+    return msg->body;
+}
+
+size_t
+http_msg_body_sz(const struct http_msg *msg) {
+    return msg->body_sz;
+}
+
+const char *
+http_header_name(const struct http_header *header) {
+    return header->name;
+}
+
+const char *
+http_header_value(const struct http_header *header) {
+    return header->value;
 }
 
 char *
@@ -249,6 +299,34 @@ http_header_free(struct http_header *header) {
     memset(header, 0, sizeof(struct http_header));
 }
 
+void
+http_msg_init(struct http_msg *msg) {
+    memset(msg, 0, sizeof(struct http_msg));
+}
+
+void
+http_msg_free(struct http_msg *msg) {
+    if (!msg)
+        return;
+
+    switch (msg->type) {
+    case HTTP_MSG_REQUEST:
+        http_free(msg->u.request.uri);
+        break;
+
+    case HTTP_MSG_RESPONSE:
+        break;
+    }
+
+    for (size_t i = 0; i < msg->nb_headers; i++)
+        http_header_free(msg->headers + i);
+    http_free(msg->headers);
+
+    http_free(msg->body);
+
+    memset(msg, 0, sizeof(struct http_msg));
+}
+
 int
 http_msg_add_header(struct http_msg *msg, const struct http_header *header) {
     struct http_header *headers;
@@ -277,32 +355,20 @@ http_msg_add_header(struct http_msg *msg, const struct http_header *header) {
     return 0;
 }
 
-void
-http_msg_init(struct http_msg *msg) {
-    memset(msg, 0, sizeof(struct http_msg));
-}
+bool
+http_msg_can_have_body(const struct http_msg *msg) {
+    if (msg->type == HTTP_MSG_REQUEST) {
+        enum http_method method;
 
-void
-http_msg_free(struct http_msg *msg) {
-    if (!msg)
-        return;
+        method = msg->u.request.method;
 
-    switch (msg->type) {
-    case HTTP_MSG_REQUEST:
-        http_free(msg->u.request.uri);
-        break;
-
-    case HTTP_MSG_RESPONSE:
-        break;
+        return method == HTTP_POST || method == HTTP_PUT;
+    } else if (msg->type == HTTP_MSG_RESPONSE)  {
+        /* TODO */
+        return false;
     }
 
-    for (size_t i = 0; i < msg->nb_headers; i++)
-        http_header_free(msg->headers + i);
-    http_free(msg->headers);
-
-    http_free(msg->body);
-
-    memset(msg, 0, sizeof(struct http_msg));
+    return false;
 }
 
 int
@@ -722,6 +788,11 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
 
     ptr = bf_buffer_data(buf);
     len = bf_buffer_length(buf);
+
+    if (!http_msg_can_have_body(msg)) {
+        parser->state = HTTP_PARSER_DONE;
+        return 1;
+    }
 
     if (!msg->has_content_length)
         HTTP_ERROR(HTTP_LENGTH_REQUIRED, "missing Content-Length header");
