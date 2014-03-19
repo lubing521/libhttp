@@ -464,8 +464,12 @@ http_sconnection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                 struct http_header *header;
 
                 header = msg->headers + i;
-                http_sconnection_trace(connection, "%s: %s",
+                http_sconnection_trace(connection, "header %s: %s",
                                        header->name, header->value);
+            }
+            if (msg->body_sz > 0) {
+                http_sconnection_trace(connection, "body: %zu bytes",
+                                       msg->body_sz);
             }
 
             /* XXX Temporary */

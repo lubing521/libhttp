@@ -115,6 +115,10 @@ enum http_msg_type {
     HTTP_MSG_RESPONSE,
 };
 
+struct http_msg;
+
+const char *http_msg_get_header(const struct http_msg *, const char *);
+
 /* Configuration */
 typedef void (*http_error_hook)(const char *, void *);
 typedef void (*http_trace_hook)(const char *, void *);

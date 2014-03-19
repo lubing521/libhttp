@@ -15,6 +15,7 @@
  */
 
 #include <ctype.h>
+#include <errno.h>
 #include <string.h>
 
 #include "http.h"
@@ -34,6 +35,26 @@ http_strndup(const char *str, size_t len) {
     nstr[len] = '\0';
 
     return nstr;
+}
+
+int
+http_parse_size(const char *str, size_t *pval) {
+    unsigned long long int ull;
+
+    errno = 0;
+    ull = strtoull(str, NULL, 10);
+    if (errno) {
+        http_set_error("%s", strerror(errno));
+        return -1;
+    }
+
+    if (ull > SIZE_MAX) {
+        http_set_error("size too large");
+        return -1;
+    }
+
+    *pval = (size_t)ull;
+    return 0;
 }
 
 #ifndef NDEBUG

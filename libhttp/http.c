@@ -39,6 +39,8 @@ struct http_cfg http_default_cfg = {
     .max_header_value_length = 4096,
 };
 
+static int http_msg_process_headers(struct http_parser *);
+
 static bool http_is_token_char(unsigned char);
 
 const char *
@@ -129,6 +131,21 @@ http_status_code_to_reason_phrase(enum http_status_code status_code) {
         return NULL;
 
     return strings[status_code];
+}
+
+const char *
+http_msg_get_header(const struct http_msg *msg, const char *name) {
+    for (size_t i = 0; i < msg->nb_headers; i++) {
+        const struct http_header *header;
+
+        header = msg->headers + i;
+
+        /* RFC 2616 4.2: Field names are case-insensitive. */
+        if(strcasecmp(header->name, name) == 0)
+            return header->value;
+    }
+
+    return NULL;
 }
 
 char *
@@ -282,6 +299,8 @@ http_msg_free(struct http_msg *msg) {
     for (size_t i = 0; i < msg->nb_headers; i++)
         http_header_free(msg->headers + i);
     http_free(msg->headers);
+
+    http_free(msg->body);
 
     memset(msg, 0, sizeof(struct http_msg));
 }
@@ -588,6 +607,9 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
         bf_buffer_skip(buf, 2);
 
         parser->state = HTTP_PARSER_BODY;
+
+        if (http_msg_process_headers(parser) == -1)
+            return -1;
         return 1;
     }
 
@@ -701,8 +723,44 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
     ptr = bf_buffer_data(buf);
     len = bf_buffer_length(buf);
 
-    /* XXX temporary */
+    if (!msg->has_content_length)
+        HTTP_ERROR(HTTP_LENGTH_REQUIRED, "missing Content-Length header");
+
+    if (len < msg->content_length)
+        return 0;
+
+    msg->body_sz = msg->content_length;
+    msg->body = http_strndup(ptr, msg->body_sz);
+    if (!msg->body)
+        return -1;
+
+    bf_buffer_skip(buf, msg->content_length);
+
     parser->state = HTTP_PARSER_DONE;
+    return 1;
+}
+
+static int
+http_msg_process_headers(struct http_parser *parser) {
+    struct http_msg *msg;
+
+    msg = &parser->msg;
+
+    for (size_t i = 0; i < msg->nb_headers; i++) {
+        const struct http_header *header;
+
+        header = msg->headers + i;
+
+        if (strcasecmp(header->name, "Content-Length") == 0) {
+            msg->has_content_length = true;
+
+            if (http_parse_size(header->value, &msg->content_length) == -1) {
+                HTTP_ERROR(HTTP_BAD_REQUEST, "cannot parse Content-Length: %s",
+                           http_get_error());
+            }
+        }
+    }
+
     return 1;
 }
 

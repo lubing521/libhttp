@@ -38,6 +38,8 @@ void http_free(void *);
 char *http_strdup(const char *);
 char *http_strndup(const char *, size_t);
 
+int http_parse_size(const char *, size_t *);
+
 #ifndef NDEBUG
 const char *http_fmt_data(const char *, size_t);
 #endif
@@ -74,7 +76,11 @@ struct http_msg {
     size_t nb_headers;
     size_t headers_sz;
 
-    /* TODO Body */
+    char *body;
+    size_t body_sz;
+
+    bool has_content_length;
+    size_t content_length;
 };
 
 void http_msg_init(struct http_msg *);
