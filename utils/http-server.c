@@ -47,7 +47,7 @@ static void https_shutdown(void);
 static void https_on_signal(evutil_socket_t, short, void *);
 static void https_on_error(const char *, void *);
 static void https_on_trace(const char *, void *);
-static void https_on_request(struct http_sconnection *,
+static void https_on_request(struct http_connection *,
                              const struct http_msg *, void *);
 
 int
@@ -167,7 +167,7 @@ https_on_trace(const char *msg, void *arg) {
 }
 
 static void
-https_on_request(struct http_sconnection *connection,
+https_on_request(struct http_connection *connection,
                  const struct http_msg *msg, void *arg) {
     size_t nb_headers;
 

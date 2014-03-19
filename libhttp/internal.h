@@ -19,6 +19,9 @@
 
 #include <stdlib.h>
 
+#include <buffer.h>
+#include <hashtable.h>
+
 /* Misc */
 #define HTTP_ARRAY_NB_ELEMENTS(array_) (sizeof(array_) / sizeof(array_[0]))
 
@@ -125,5 +128,57 @@ int http_msg_parse_request_line(struct bf_buffer *, struct http_parser *);
 int http_msg_parse_status_line(struct bf_buffer *, struct http_parser *);
 int http_msg_parse_headers(struct bf_buffer *, struct http_parser *);
 int http_msg_parse_body(struct bf_buffer *, struct http_parser *);
+
+/* Connections */
+struct http_connection {
+    struct http_server *server;
+
+    int sock;
+
+    struct event *ev_read;
+    struct event *ev_write;
+
+    struct bf_buffer *rbuf;
+    struct bf_buffer *wbuf;
+
+    char host[NI_MAXHOST];
+    char port[NI_MAXSERV];
+
+    bool shutting_down;
+
+    struct http_parser parser;
+};
+
+struct http_connection *http_connection_setup(struct http_server *, int);
+void http_connection_close(struct http_connection *);
+
+int http_connection_write(struct http_connection *, const void *, size_t);
+int http_connection_printf(struct http_connection *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+
+int http_connection_http_error(struct http_connection *, enum http_status_code);
+
+void http_connection_on_read_event(evutil_socket_t, short, void *);
+void http_connection_on_write_event(evutil_socket_t, short, void *);
+
+void http_connection_error(struct http_connection *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+void http_connection_trace(struct http_connection *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+
+/* Servers */
+struct http_server {
+    struct http_cfg cfg;
+
+    struct event_base *ev_base;
+
+    struct ht_table *listeners;
+    struct ht_table *connections;
+};
+
+void http_server_error(struct http_server *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+void http_server_trace(struct http_server *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
 
 #endif
