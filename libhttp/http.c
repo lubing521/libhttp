@@ -38,6 +38,8 @@ struct http_cfg http_default_cfg = {
 
     .max_header_name_length = 128,
     .max_header_value_length = 4096,
+
+    .connection_timeout = 5000,
 };
 
 static int http_msg_process_headers(struct http_parser *);

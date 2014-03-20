@@ -164,6 +164,8 @@ struct http_cfg {
 
     size_t max_header_name_length;
     size_t max_header_value_length;
+
+    uint64_t connection_timeout; /* milliseconds */
 };
 
 extern struct http_cfg http_default_cfg;

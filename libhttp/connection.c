@@ -80,11 +80,27 @@ http_connection_setup(struct http_server *server, int sock) {
     connection->parser.cfg = &server->cfg;
 
     connection->http_version = HTTP_1_1;
+
+    if (http_now_ms(&connection->last_activity) == -1)
+        goto error;
+
     return connection;
 
 error:
     http_connection_close(connection);
     return NULL;
+}
+
+void
+http_connection_check_for_timeout(struct http_connection *connection,
+                                  uint64_t now) {
+    uint64_t diff;
+
+    diff = now - connection->last_activity;
+    if (diff > connection->server->cfg.connection_timeout) {
+        http_connection_http_error(connection, HTTP_REQUEST_TIMEOUT);
+        http_connection_shutdown(connection);
+    }
 }
 
 int
@@ -286,6 +302,9 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             }
         }
     }
+
+    if (http_now_ms(&connection->last_activity) == -1)
+        http_connection_error(connection, "%s", http_get_error());
 }
 
 void
@@ -416,6 +435,7 @@ http_connection_process_msg(struct http_connection *connection,
 
     /* XXX Temporary */
     http_connection_http_error(connection, HTTP_SERVICE_UNAVAILABLE);
+    http_connection_shutdown(connection);
 
     if (msg->version == HTTP_1_0) {
         do_shutdown = !(msg->connection_options & HTTP_CONNECTION_KEEP_ALIVE);

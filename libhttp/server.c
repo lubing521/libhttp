@@ -27,6 +27,8 @@
 #include "http.h"
 #include "internal.h"
 
+static void http_server_on_timeout_timer(evutil_socket_t, short, void *);
+
 struct http_listener {
     struct http_server *server;
 
@@ -45,7 +47,8 @@ static void http_listener_on_sock_event(evutil_socket_t, short, void *);
 
 struct http_server *
 http_server_listen(const struct http_cfg *cfg,
-                         struct event_base *ev_base) {
+                   struct event_base *ev_base) {
+    struct timeval tv;
     struct http_server *server;
     struct addrinfo hints, *res;
     int ret;
@@ -108,6 +111,20 @@ http_server_listen(const struct http_cfg *cfg,
         goto error;
     }
 
+    server->timeout_timer = evtimer_new(ev_base, http_server_on_timeout_timer,
+                                        server);
+    if (!server->timeout_timer) {
+        http_set_error("cannot create timer: %s", strerror(errno));
+        goto error;
+    }
+
+    tv.tv_sec = 0;
+    tv.tv_usec = 100 * 1000;
+    if (evtimer_add(server->timeout_timer, &tv) == -1) {
+        http_set_error("cannot start timer: %s", strerror(errno));
+        goto error;
+    }
+
     return server;
 
 error:
@@ -121,6 +138,9 @@ http_server_shutdown(struct http_server *server) {
 
     if (!server)
         return;
+
+    if (server->timeout_timer)
+        event_free(server->timeout_timer);
 
     it = ht_table_iterate(server->connections);
     if (it) {
@@ -146,6 +166,66 @@ http_server_shutdown(struct http_server *server) {
 
     memset(server, 0, sizeof(struct http_server));
     http_free(server);
+}
+
+void
+http_server_error(struct http_server *server, const char *fmt, ...) {
+    char buf[HTTP_ERROR_BUFSZ];
+    va_list ap;
+
+    if (!server->cfg.error_hook)
+        return;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
+    va_end(ap);
+
+    server->cfg.error_hook(buf, server->cfg.hook_arg);
+}
+
+void
+http_server_trace(struct http_server *server, const char *fmt, ...) {
+    char buf[HTTP_ERROR_BUFSZ];
+    va_list ap;
+
+    if (!server->cfg.trace_hook)
+        return;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
+    va_end(ap);
+
+    server->cfg.trace_hook(buf, server->cfg.hook_arg);
+}
+
+static void
+http_server_on_timeout_timer(evutil_socket_t fd, short events, void *arg) {
+    struct ht_table_iterator *it;
+    struct http_server *server;
+    struct timeval tv;
+    uint64_t now;
+
+    server = arg;
+
+    tv.tv_sec = 0;
+    tv.tv_usec = 500 * 1000;
+    if (evtimer_add(server->timeout_timer, &tv) == -1)
+        http_server_error(server, "cannot start timer: %s", strerror(errno));
+
+    if (http_now_ms(&now) == -1) {
+        http_server_error(server, "%s", http_get_error());
+        return;
+    }
+
+    it = ht_table_iterate(server->connections);
+    if (it) {
+        struct http_connection *connection;
+
+        while (ht_table_iterator_get_next(it, NULL, (void **)&connection) == 1)
+            http_connection_check_for_timeout(connection, now);
+
+        ht_table_iterator_delete(it);
+    }
 }
 
 static struct http_listener *
@@ -218,36 +298,6 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
 error:
     http_listener_close(listener);
     return NULL;
-}
-
-void
-http_server_error(struct http_server *server, const char *fmt, ...) {
-    char buf[HTTP_ERROR_BUFSZ];
-    va_list ap;
-
-    if (!server->cfg.error_hook)
-        return;
-
-    va_start(ap, fmt);
-    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
-    va_end(ap);
-
-    server->cfg.error_hook(buf, server->cfg.hook_arg);
-}
-
-void
-http_server_trace(struct http_server *server, const char *fmt, ...) {
-    char buf[HTTP_ERROR_BUFSZ];
-    va_list ap;
-
-    if (!server->cfg.trace_hook)
-        return;
-
-    va_start(ap, fmt);
-    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
-    va_end(ap);
-
-    server->cfg.trace_hook(buf, server->cfg.hook_arg);
 }
 
 static void

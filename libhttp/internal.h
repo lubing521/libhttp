@@ -25,6 +25,8 @@
 /* Misc */
 #define HTTP_ARRAY_NB_ELEMENTS(array_) (sizeof(array_) / sizeof(array_[0]))
 
+int http_now_ms(uint64_t *);
+
 /* Error handling */
 #define HTTP_ERROR_BUFSZ 1024
 
@@ -153,9 +155,13 @@ struct http_connection {
     struct http_parser parser;
 
     enum http_version http_version;
+
+    uint64_t last_activity;
 };
 
 struct http_connection *http_connection_setup(struct http_server *, int);
+
+void http_connection_check_for_timeout(struct http_connection *, uint64_t);
 
 int http_connection_write(struct http_connection *, const void *, size_t);
 int http_connection_printf(struct http_connection *, const char *, ...)
@@ -174,6 +180,7 @@ struct http_server {
     struct http_cfg cfg;
 
     struct event_base *ev_base;
+    struct event *timeout_timer;
 
     struct ht_table *listeners;
     struct ht_table *connections;
