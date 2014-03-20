@@ -183,8 +183,7 @@ int http_connection_http_error(struct http_connection *,
                                enum http_status_code);
 
 int http_connection_write_response(struct http_connection *,
-                                   enum http_version, enum http_status_code,
-                                   const char *);
+                                   enum http_status_code, const char *);
 int http_connection_write_header(struct http_connection *,
                                  const char *, const char *);
 int http_connection_write_body(struct http_connection *,

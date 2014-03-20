@@ -170,7 +170,6 @@ http_connection_http_error(struct http_connection *connection,
     snprintf(length_str, sizeof(length_str), "%zu", body_length);
 
     if (http_connection_write_response(connection,
-                                       connection->http_version,
                                        status_code, reason_phrase) == -1) {
         http_connection_error(connection, "%s", strerror(errno));
         http_connection_close(connection);
@@ -363,14 +362,13 @@ http_connection_trace(struct http_connection *connection,
 
 int
 http_connection_write_response(struct http_connection *connection,
-                               enum http_version version,
                                enum http_status_code status_code,
                                const char *reason_phrase) {
     const char *version_str;
 
-    version_str = http_version_to_string(version);
+    version_str = http_version_to_string(connection->http_version);
     if (!version_str) {
-        http_set_error("unknown http version %d", version);
+        http_set_error("unknown http version %d", connection->http_version);
         return -1;
     }
 
@@ -434,8 +432,10 @@ http_connection_process_msg(struct http_connection *connection,
     connection->http_version = msg->version;
 
     /* XXX Temporary */
-    http_connection_http_error(connection, HTTP_SERVICE_UNAVAILABLE);
-    http_connection_shutdown(connection);
+    http_connection_write_response(connection, HTTP_OK, NULL);
+    http_connection_write_header(connection, "Content-Type", "text/plain");
+    http_connection_write_header(connection, "Content-Length", "6");
+    http_connection_write_body(connection, "hello\n", 6);
 
     if (msg->version == HTTP_1_0) {
         do_shutdown = !(msg->connection_options & HTTP_CONNECTION_KEEP_ALIVE);
