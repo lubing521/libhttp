@@ -93,6 +93,9 @@ int http_msg_add_header(struct http_msg *, const struct http_header *);
 
 bool http_msg_can_have_body(const struct http_msg *);
 
+/* Misc */
+int http_token_list_next_token(const char *, char *, size_t, const char **);
+
 /* Parser */
 enum http_parser_state {
     HTTP_PARSER_START,

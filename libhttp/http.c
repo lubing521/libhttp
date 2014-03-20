@@ -372,6 +372,74 @@ http_msg_can_have_body(const struct http_msg *msg) {
 }
 
 int
+http_token_list_next_token(const char *list, char *token, size_t sz,
+                           const char **pend) {
+    const char *ptr, *start, *end;
+    size_t toklen;
+
+    start = NULL;
+    end = NULL;
+
+    /* Note that we need to read after the end of the token, until we find
+     * either a comma or the end of the string. This way, we can detect
+     * the case where two tokens are separated by spaces (or tabs) only, which
+     * is invalid (the separator is the comma, and space are invalid
+     * characters inside tokens). */
+
+    ptr = list;
+    while (*ptr != '\0') {
+        if (start && end) {
+            /* After token */
+            if (*ptr == ' ' || *ptr == '\t') {
+                ptr++;
+            } else if (*ptr == ',') {
+                break;
+            } else {
+                http_set_error("missing separator");
+                return -1;
+            }
+        } else if (start) {
+            /* In token */
+            if (*ptr == ' ' || *ptr == '\t' || *ptr == ',') {
+                end = ptr;
+            } else if (!http_is_token_char((unsigned char)*ptr)) {
+                http_set_error("invalid character in token");
+                return -1;
+            } else {
+                ptr++;
+            }
+        } else {
+            /* Out of token */
+            if (*ptr == ' ' || *ptr == '\t' || *ptr == ',') {
+                ptr++;
+            } else if (!http_is_token_char((unsigned char)*ptr)) {
+                http_set_error("invalid character in token list");
+                return -1;
+            } else {
+                start = ptr;
+                ptr++;
+            }
+        }
+    }
+
+    if (!start)
+        return 0;
+
+    if (!end)
+        end = ptr;
+
+    toklen = (size_t)(end - start);
+    if (toklen > sz)
+        toklen = sz - 1;
+
+    memcpy(token, start, sz);
+    token[toklen] = '\0';
+
+    *pend = end;
+    return 1;
+}
+
+int
 http_parser_init(struct http_parser *parser, enum http_msg_type msg_type,
                  const struct http_cfg *cfg) {
     memset(parser, 0, sizeof(struct http_parser));
