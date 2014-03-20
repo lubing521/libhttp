@@ -134,6 +134,10 @@ http_status_code_to_reason_phrase(enum http_status_code status_code) {
     return strings[status_code];
 }
 
+enum http_version
+http_msg_version(const struct http_msg *msg) {
+    return msg->version;
+}
 
 enum http_method
 http_request_method(const struct http_msg *msg) {
@@ -145,12 +149,6 @@ const char *
 http_request_uri(const struct http_msg *msg) {
     assert(msg->type == HTTP_MSG_REQUEST);
     return msg->u.request.uri;
-}
-
-enum http_version
-http_request_version(const struct http_msg *msg) {
-    assert(msg->type == HTTP_MSG_REQUEST);
-    return msg->u.request.version;
 }
 
 size_t
@@ -681,9 +679,9 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
                 HTTP_ERROR(HTTP_BAD_REQUEST, "invalid http version format");
 
             if (memcmp(start, "1.0", toklen) == 0) {
-                msg->u.request.version = HTTP_1_0;
+                msg->version = HTTP_1_0;
             } else if (memcmp(start, "1.1", toklen) == 0) {
-                msg->u.request.version = HTTP_1_1;
+                msg->version = HTTP_1_1;
             } else {
                 HTTP_ERROR(HTTP_HTTP_VERSION_NOT_SUPPORTED,
                            "unsupported http version");

@@ -119,9 +119,10 @@ struct http_msg;
 struct http_header;
 struct http_connection;
 
+enum http_version http_msg_version(const struct http_msg *);
+
 enum http_method http_request_method(const struct http_msg *);
 const char *http_request_uri(const struct http_msg *);
-enum http_version http_request_version(const struct http_msg *);
 
 size_t http_msg_nb_headers(const struct http_msg *);
 const struct http_header *http_msg_header(const struct http_msg *, size_t);

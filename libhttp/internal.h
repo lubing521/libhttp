@@ -60,16 +60,15 @@ void http_header_free(struct http_header *);
 
 struct http_msg {
     enum http_msg_type type;
+    enum http_version version;
 
     union {
         struct {
-            enum http_version version;
             enum http_method method;
             char *uri;
         } request;
 
         struct {
-            enum http_version version;
             enum http_status_code status_code;
             char *reason_phrase;
         } response;

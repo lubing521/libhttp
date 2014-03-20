@@ -68,7 +68,7 @@ main(int argc, char **argv) {
         HTTPT_BEGIN(str_);                                      \
         HTTPT_IS_EQUAL_INT(msg->u.request.method, method_);     \
         HTTPT_IS_EQUAL_STRING(msg->u.request.uri, uri_);        \
-        HTTPT_IS_EQUAL_INT(msg->u.request.version, version_);   \
+        HTTPT_IS_EQUAL_INT(msg->version, version_);             \
         HTTPT_END();                                            \
     } while (0)
 

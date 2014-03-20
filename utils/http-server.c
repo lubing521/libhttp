@@ -174,7 +174,7 @@ https_on_request(struct http_connection *connection,
     printf("\nrequest  %s %s %s\n",
            http_method_to_string(http_request_method(msg)),
            http_request_uri(msg),
-           http_version_to_string(http_request_version(msg)));
+           http_version_to_string(http_msg_version(msg)));
 
     nb_headers = http_msg_nb_headers(msg);
     for (size_t i = 0; i < nb_headers; i++) {
