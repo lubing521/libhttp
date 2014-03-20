@@ -141,16 +141,38 @@ http_connection_printf(struct http_connection *connection,
 int
 http_connection_http_error(struct http_connection *connection,
                            enum http_status_code status_code) {
-    if (http_connection_shutdown(connection) == -1)
-        return -1;
+    const char *reason_phrase;
+    char body[1024];
+    char length_str[32];
+    size_t body_length;
+
+    reason_phrase = http_status_code_to_reason_phrase(status_code);
+    snprintf(body, sizeof(body), "<h1>%d %s</h1>\n",
+             status_code, reason_phrase);
+    body_length = strlen(body);
+
+    snprintf(length_str, sizeof(length_str), "%zu", body_length);
 
     if (http_connection_write_response(connection,
                                        connection->http_version,
-                                       status_code, NULL) == -1) {
+                                       status_code, reason_phrase) == -1) {
         http_connection_error(connection, "%s", strerror(errno));
         http_connection_close(connection);
         return -1;
     }
+
+    if (http_connection_write_header(connection,
+                                     "Content-Type", "text/html") == -1) {
+        return -1;
+    }
+
+    if (http_connection_write_header(connection,
+                                     "Content-Length", length_str) == -1) {
+        return -1;
+    }
+
+    if (http_connection_write_body(connection, body, body_length) == -1)
+        return -1;
 
     return 0;
 }
