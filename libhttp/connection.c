@@ -22,6 +22,9 @@
 #include "http.h"
 #include "internal.h"
 
+static void http_connection_process_msg(struct http_connection *,
+                                        struct http_msg *);
+
 struct http_connection *
 http_connection_setup(struct http_server *server, int sock) {
     struct http_connection *connection;
@@ -234,6 +237,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                                   http_get_error());
             http_connection_http_error(connection,
                                        HTTP_INTERNAL_SERVER_ERROR);
+            http_connection_shutdown(connection);
             return;
         }
 
@@ -244,13 +248,13 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             http_connection_error(connection, "cannot parse request: %s",
                                    parser->errmsg);
             http_connection_http_error(connection, parser->status_code);
+            http_connection_shutdown(connection);
             return;
         } else if (parser->state == HTTP_PARSER_DONE) {
             if (cfg->request_hook)
                 cfg->request_hook(connection, msg, cfg->hook_arg);
 
-            /* XXX Temporary */
-            http_connection_http_error(connection, HTTP_SERVICE_UNAVAILABLE);
+            http_connection_process_msg(connection, msg);
 
             if (http_parser_reset(parser, HTTP_MSG_REQUEST, cfg) == -1) {
                 http_connection_error(connection, "cannot reset parser: %s",
@@ -371,4 +375,39 @@ http_connection_write_body(struct http_connection *connection,
         return -1;
 
     return 0;
+}
+
+int
+http_connection_write_empty_body(struct http_connection *connection) {
+    if (http_connection_write(connection, "\r\n", 2) == -1)
+        return -1;
+
+    return 0;
+}
+
+static void
+http_connection_process_msg(struct http_connection *connection,
+                            struct http_msg *msg) {
+    bool do_shutdown;
+
+    connection->http_version = msg->version;
+
+    /* XXX Temporary */
+    http_connection_http_error(connection, HTTP_SERVICE_UNAVAILABLE);
+
+    if (msg->version == HTTP_1_0) {
+        do_shutdown = !(msg->connection_options & HTTP_CONNECTION_KEEP_ALIVE);
+    } else if (msg->version == HTTP_1_1) {
+        do_shutdown = msg->connection_options & HTTP_CONNECTION_CLOSE;
+    } else {
+        do_shutdown = true;
+    }
+
+    if (do_shutdown) {
+        if (http_connection_shutdown(connection) == -1) {
+            http_connection_error(connection,
+                                  "cannot shutdown connection: %s",
+                                  http_get_error());
+        }
+    }
 }

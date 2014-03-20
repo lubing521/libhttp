@@ -763,7 +763,7 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
             found = true;
             break;
         } else if (!http_is_token_char((unsigned char)*ptr)) {
-            HTTP_ERROR(HTTP_BAD_REQUEST, 
+            HTTP_ERROR(HTTP_BAD_REQUEST,
                        "invalid character \\%hhu in header name",
                        (unsigned char)(*ptr));
         }
