@@ -149,6 +149,8 @@ struct http_connection {
     bool shutting_down;
 
     struct http_parser parser;
+
+    enum http_version http_version;
 };
 
 struct http_connection *http_connection_setup(struct http_server *, int);

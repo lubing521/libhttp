@@ -170,6 +170,7 @@ void http_server_shutdown(struct http_server *server);
 
 /* Connections */
 void http_connection_close(struct http_connection *);
+int http_connection_shutdown(struct http_connection *);
 
 int http_connection_http_error(struct http_connection *,
                                enum http_status_code);

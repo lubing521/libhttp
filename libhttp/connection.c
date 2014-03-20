@@ -76,6 +76,7 @@ http_connection_setup(struct http_server *server, int sock) {
     connection->parser.msg.type = HTTP_MSG_REQUEST;
     connection->parser.cfg = &server->cfg;
 
+    connection->http_version = HTTP_1_1;
     return connection;
 
 error:
@@ -136,33 +137,18 @@ http_connection_printf(struct http_connection *connection,
 
 int
 http_connection_http_error(struct http_connection *connection,
-                            enum http_status_code status_code) {
-    const char *reason_phrase;
-
-    if (event_del(connection->ev_read) == -1) {
-        http_connection_error(connection,
-                               "cannot remove read event handler: %s",
-                               strerror(errno));
-        http_connection_close(connection);
+                           enum http_status_code status_code) {
+    if (http_connection_shutdown(connection) == -1)
         return -1;
-    }
 
-    if (shutdown(connection->sock, SHUT_RD) == -1) {
-        http_connection_error(connection, "cannot shutdown socket: %s",
-                               strerror(errno));
-        http_connection_close(connection);
-        return -1;
-    }
-
-    reason_phrase = http_status_code_to_reason_phrase(status_code);
-    if (http_connection_printf(connection, "HTTP/1.0 %d %s\r\n",
-                               status_code, reason_phrase) == -1) {
+    if (http_connection_write_response(connection,
+                                       connection->http_version,
+                                       status_code, NULL) == -1) {
         http_connection_error(connection, "%s", strerror(errno));
         http_connection_close(connection);
         return -1;
     }
 
-    connection->shutting_down = true;
     return 0;
 }
 
@@ -191,6 +177,25 @@ http_connection_close(struct http_connection *connection) {
 
     memset(connection, 0, sizeof(struct http_connection));
     http_free(connection);
+}
+
+int
+http_connection_shutdown(struct http_connection *connection) {
+    if (event_del(connection->ev_read) == -1) {
+        http_set_error("cannot remove read event handler: %s",
+                       strerror(errno));
+        http_connection_close(connection);
+        return -1;
+    }
+
+    if (shutdown(connection->sock, SHUT_RD) == -1) {
+        http_set_error("cannot shutdown socket: %s", strerror(errno));
+        http_connection_close(connection);
+        return -1;
+    }
+
+    connection->shutting_down = true;
+    return 0;
 }
 
 void
