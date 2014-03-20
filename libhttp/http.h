@@ -115,6 +115,11 @@ enum http_msg_type {
     HTTP_MSG_RESPONSE,
 };
 
+enum http_connection_option {
+    HTTP_CONNECTION_KEEP_ALIVE = 0x01, /* HTTP/1.0 only */
+    HTTP_CONNECTION_CLOSE      = 0x02,
+};
+
 struct http_msg;
 struct http_header;
 struct http_connection;

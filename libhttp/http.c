@@ -370,8 +370,8 @@ http_msg_can_have_body(const struct http_msg *msg) {
 }
 
 int
-http_token_list_next_token(const char *list, char *token, size_t sz,
-                           const char **pend) {
+http_token_list_get_next_token(const char *list, char *token, size_t sz,
+                               const char **pend) {
     const char *ptr, *start, *end;
     size_t toklen;
 
@@ -888,7 +888,33 @@ http_msg_process_headers(struct http_parser *parser) {
 
         header = msg->headers + i;
 
-        if (strcasecmp(header->name, "Content-Length") == 0) {
+#define HTTP_HEADER_IS(name_) (strcasecmp(header->name, name_) == 0)
+
+        if (HTTP_HEADER_IS("Connection")) {
+            char token[32];
+            const char *list, *end;
+
+            list = header->value;
+            for (;;) {
+                int ret;
+
+                ret = http_token_list_get_next_token(list,
+                                                     token, sizeof(token),
+                                                     &end);
+                if (ret == -1)
+                    goto ignore_header;
+                if (ret == 0)
+                    break;
+
+                if (strcasecmp(token, "keep-alive") == 0) {
+                    msg->connection_options |= HTTP_CONNECTION_KEEP_ALIVE;
+                } else if (strcasecmp(token, "close") == 0) {
+                    msg->connection_options |= HTTP_CONNECTION_CLOSE;
+                }
+
+                list = end;
+            }
+        } else if (HTTP_HEADER_IS("Content-Length")) {
             msg->has_content_length = true;
 
             if (http_parse_size(header->value, &msg->content_length) == -1) {
@@ -896,6 +922,11 @@ http_msg_process_headers(struct http_parser *parser) {
                            http_get_error());
             }
         }
+
+ignore_header:
+        continue;
+
+#undef HTTP_HEADER_IS
     }
 
     return 1;

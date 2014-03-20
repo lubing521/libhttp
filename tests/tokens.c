@@ -25,11 +25,11 @@ main(int argc, char **argv) {
     const char *str, *end;
     int ret;
 
-#define HTTPT_NEXT_TOKEN()                                                 \
-    do {                                                                   \
-        if (end)                                                           \
-            str = end;                                                     \
-        ret = http_token_list_next_token(str, token, sizeof(token), &end); \
+#define HTTPT_NEXT_TOKEN()                                                     \
+    do {                                                                       \
+        if (end)                                                               \
+            str = end;                                                         \
+        ret = http_token_list_get_next_token(str, token, sizeof(token), &end); \
     } while (0)
 
     str = "a";

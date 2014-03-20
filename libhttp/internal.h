@@ -83,6 +83,8 @@ struct http_msg {
 
     bool has_content_length;
     size_t content_length;
+
+    int connection_options;
 };
 
 void http_msg_init(struct http_msg *);
@@ -93,7 +95,7 @@ int http_msg_add_header(struct http_msg *, const struct http_header *);
 bool http_msg_can_have_body(const struct http_msg *);
 
 /* Misc */
-int http_token_list_next_token(const char *, char *, size_t, const char **);
+int http_token_list_get_next_token(const char *, char *, size_t, const char **);
 
 /* Parser */
 enum http_parser_state {
