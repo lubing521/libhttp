@@ -946,8 +946,8 @@ http_is_token_char(unsigned char c) {
         0x03ff6cfa, /*  32- 63  ?>=< ;:98 7654 3210 /.-, +*)( `&%$ #"!  */
                     /*          0000 0011 1111 1111 0110 1100 1111 1010 */
 
-        0xc7ffffee, /*  64- 95  _^]\ [ZYX WVUT SRQP ONML KJIH GFED CBA@ */
-                    /*          1100 0111 1111 1111 1111 1111 1110 1110 */
+        0xc7fffffe, /*  64- 95  _^]\ [ZYX WVUT SRQP ONML KJIH GFED CBA@ */
+                    /*          1100 0111 1111 1111 1111 1111 1111 1110 */
 
         0x67ffffff, /*  96-127   ~}| {zyx wvut srqp onml kjih gfed cba` */
                     /*          0101 0111 1111 1111 1111 1111 1111 1111 */
