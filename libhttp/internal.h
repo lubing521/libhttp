@@ -150,13 +150,10 @@ struct http_connection {
 };
 
 struct http_connection *http_connection_setup(struct http_server *, int);
-void http_connection_close(struct http_connection *);
 
 int http_connection_write(struct http_connection *, const void *, size_t);
 int http_connection_printf(struct http_connection *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
-
-int http_connection_http_error(struct http_connection *, enum http_status_code);
 
 void http_connection_on_read_event(evutil_socket_t, short, void *);
 void http_connection_on_write_event(evutil_socket_t, short, void *);

@@ -310,3 +310,60 @@ http_connection_trace(struct http_connection *connection,
     http_server_trace(connection->server, "%s:%s: %s",
                       connection->host, connection->port, buf);
 }
+
+int
+http_connection_write_response(struct http_connection *connection,
+                               enum http_version version,
+                               enum http_status_code status_code,
+                               const char *reason_phrase) {
+    const char *version_str;
+
+    version_str = http_version_to_string(version);
+    if (!version_str) {
+        http_set_error("unknown http version %d", version);
+        return -1;
+    }
+
+    if (!reason_phrase) {
+        reason_phrase = http_status_code_to_reason_phrase(status_code);
+        if (!reason_phrase) {
+            http_set_error("unknown status code %d", status_code);
+            return -1;
+        }
+    }
+
+    if (http_connection_printf(connection, "%s %d %s\r\n",
+                               version_str, status_code,
+                               reason_phrase) == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int
+http_connection_write_header(struct http_connection *connection,
+                             const char *name, const char *value) {
+    if (http_connection_printf(connection, "%s: ", name) == -1)
+        return -1;
+
+    if (http_connection_write(connection, value, strlen(value)) == -1)
+        return -1;
+
+    if (http_connection_write(connection, "\r\n", 2) == -1)
+        return -1;
+
+    return 0;
+}
+
+int
+http_connection_write_body(struct http_connection *connection,
+                           const char *buf, size_t sz) {
+    if (http_connection_write(connection, "\r\n", 2) == -1)
+        return -1;
+
+    if (http_connection_write(connection, buf, sz) == -1)
+        return -1;
+
+    return 0;
+}

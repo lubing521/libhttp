@@ -128,7 +128,7 @@ const struct http_header *http_msg_header(const struct http_msg *, size_t);
 const char *http_msg_get_header(const struct http_msg *, const char *);
 
 const char *http_msg_body(const struct http_msg *);
-size_t http_msg_body_sz(const struct http_msg *);
+size_t http_msg_body_length(const struct http_msg *);
 
 const char *http_header_name(const struct http_header *);
 const char *http_header_value(const struct http_header *);
@@ -166,5 +166,19 @@ extern struct http_cfg http_default_cfg;
 struct http_server *http_server_listen(const struct http_cfg *,
                                        struct event_base *);
 void http_server_shutdown(struct http_server *server);
+
+/* Connections */
+void http_connection_close(struct http_connection *);
+
+int http_connection_http_error(struct http_connection *,
+                               enum http_status_code);
+
+int http_connection_write_response(struct http_connection *,
+                                   enum http_version, enum http_status_code,
+                                   const char *);
+int http_connection_write_header(struct http_connection *,
+                                 const char *, const char *);
+int http_connection_write_body(struct http_connection *,
+                               const char *, size_t);
 
 #endif

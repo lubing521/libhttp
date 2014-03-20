@@ -185,6 +185,12 @@ https_on_request(struct http_connection *connection,
                http_header_name(header), http_header_value(header));
     }
 
-    if (http_msg_body_sz(msg) > 0)
-        printf("body     %zu bytes\n", http_msg_body_sz(msg));
+    if (http_msg_body_length(msg) > 0)
+        printf("body     %zu bytes\n", http_msg_body_length(msg));
+
+    http_connection_write_response(connection, HTTP_1_1, HTTP_OK, NULL);
+    http_connection_write_header(connection, "Content-Type", "text/plain");
+    http_connection_write_header(connection, "Content-Length", "6");
+    http_connection_write_header(connection, "Connection", "close");
+    http_connection_write_body(connection, "Hello\n", 6);
 }

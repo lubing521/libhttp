@@ -184,7 +184,7 @@ http_msg_body(const struct http_msg *msg) {
 }
 
 size_t
-http_msg_body_sz(const struct http_msg *msg) {
+http_msg_body_length(const struct http_msg *msg) {
     return msg->body_sz;
 }
 
