@@ -20,9 +20,12 @@
 #include "internal.h"
 
 static int http_uri_parse(const char *, struct http_uri *);
+static char *http_uri_decode_component(const char *, size_t);
 
-static bool http_is_uri_scheme_char(unsigned char);
-static bool http_is_uri_port_char(unsigned char);
+static int http_read_hex_digit(unsigned char, int *);
+
+static bool http_uri_is_scheme_char(unsigned char);
+static bool http_uri_is_port_char(unsigned char);
 
 struct http_uri *
 http_uri_new(const char *str) {
@@ -75,7 +78,8 @@ http_uri_parse(const char *str, struct http_uri *uri) {
     start = ptr;
 
     if (!(*ptr >= 'a' && *ptr <= 'z')
-     && !(*ptr >= 'A' && *ptr <= 'Z')) {
+     && !(*ptr >= 'A' && *ptr <= 'Z')
+     && *ptr != '%') {
         http_set_error("invalid first character \\%hhu in scheme",
                        (unsigned char)*ptr);
         goto error;
@@ -84,11 +88,12 @@ http_uri_parse(const char *str, struct http_uri *uri) {
     while (*ptr != '\0') {
         if (*ptr == ':') {
             toklen = (size_t)(ptr - start);
-            uri->scheme = http_strndup(start, toklen);
+            uri->scheme = http_uri_decode_component(start, toklen);
             if (!uri->scheme)
                 goto error;
             break;
-        } else if (!http_is_uri_scheme_char((unsigned char)*ptr)) {
+        } else if (!http_uri_is_scheme_char((unsigned char)*ptr)
+                && *ptr != '%') {
             http_set_error("invalid character \\%hhu in scheme",
                            (unsigned char)*ptr);
             goto error;
@@ -123,7 +128,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
                 toklen = (size_t)(ptr - start);
             }
 
-            uri->user = http_strndup(start, toklen);
+            uri->user = http_uri_decode_component(start, toklen);
             if (!uri->user)
                 goto error;
 
@@ -151,7 +156,8 @@ http_uri_parse(const char *str, struct http_uri *uri) {
             if (*ptr == '@') {
                 toklen = (size_t)(ptr - start - 1);
                 if (toklen > 0) {
-                    uri->password = http_strndup(start + 1, toklen);
+                    uri->password = http_uri_decode_component(start + 1,
+                                                              toklen);
                     if (!uri->password)
                         goto error;
                 }
@@ -185,7 +191,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
                 goto error;
             }
 
-            uri->host = http_strndup(start, toklen);
+            uri->host = http_uri_decode_component(start, toklen);
             if (!uri->host)
                 goto error;
             break;
@@ -196,7 +202,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
 
     if (!uri->host) {
         toklen = (size_t)(ptr - start);
-        uri->host = http_strndup(start, toklen);
+        uri->host = http_uri_decode_component(start, toklen);
         if (!uri->host)
             goto error;
     }
@@ -215,12 +221,12 @@ http_uri_parse(const char *str, struct http_uri *uri) {
                     goto error;
                 }
 
-                uri->port = http_strndup(start, toklen);
+                uri->port = http_uri_decode_component(start, toklen);
                 if (!uri->port)
                     goto error;
 
                 break;
-            } else if (!http_is_uri_port_char((unsigned char)*ptr)) {
+            } else if (!http_uri_is_port_char((unsigned char)*ptr)) {
                 http_set_error("invalid character \\%hhu in port",
                                (unsigned char)*ptr);
                 goto error;
@@ -231,7 +237,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
 
         if (!uri->port) {
             toklen = (size_t)(ptr - start);
-            uri->port = http_strndup(start, toklen);
+            uri->port = http_uri_decode_component(start, toklen);
             if (!uri->port)
                 goto error;
         }
@@ -244,7 +250,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
         while (*ptr != '\0') {
             if (*ptr == '?') {
                 toklen = (size_t)(ptr - start);
-                uri->path = http_strndup(start, toklen);
+                uri->path = http_uri_decode_component(start, toklen);
                 if (!uri->path)
                     goto error;
 
@@ -256,7 +262,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
 
         if (!uri->path) {
             toklen = (size_t)(ptr - start);
-            uri->path = http_strndup(start, toklen);
+            uri->path = http_uri_decode_component(start, toklen);
             if (!uri->path)
                 goto error;
         }
@@ -276,7 +282,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
             ptr++;
 
         toklen = (size_t)(ptr - start);
-        uri->query = http_strndup(start, toklen);
+        uri->query = http_uri_decode_component(start, toklen);
         if (!uri->query)
             goto error;
     }
@@ -287,14 +293,77 @@ error:
     return -1;
 }
 
+static char *
+http_uri_decode_component(const char *str, size_t sz) {
+    const char *iptr;
+    char *component, *optr;
+    size_t str_length, ilen;
+
+    str_length = strlen(str);
+    component = http_malloc(str_length + 1);
+    if (!component)
+        return NULL;
+
+    iptr = str;
+    ilen = sz;
+
+    optr = component;
+
+    while (ilen > 0) {
+        if (*iptr == '%') {
+            int d1, d2;
+
+            if (ilen < 3) {
+                http_set_error("truncated escape sequence");
+                goto error;
+            }
+
+            if (http_read_hex_digit((unsigned char)iptr[1], &d1) == -1
+             || http_read_hex_digit((unsigned char)iptr[2], &d2) == -1) {
+                http_set_error("invalid escape sequence");
+                goto error;
+            }
+
+            *optr++ = (d1 << 4) | d2;
+            iptr += 3;
+            ilen -= 3;
+        } else {
+            *optr++ = *iptr++;
+            ilen--;
+        }
+    }
+
+    *optr = '\0';
+    return component;
+
+error:
+    http_free(component);
+    return NULL;
+}
+
+static int
+http_read_hex_digit(unsigned char c, int *val) {
+    if (c >= '0' && c <= '9') {
+        *val = c - '0';
+    } else if (c >= 'a' && c <= 'f') {
+        *val = 10 + c - 'a';
+    } else if (c >= 'A' && c <= 'F') {
+        *val = 10 + c - 'A';
+    } else {
+        return -1;
+    }
+
+    return 0;
+}
+
 static bool
-http_is_uri_scheme_char(unsigned char c) {
+http_uri_is_scheme_char(unsigned char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
         || (c >= '0' && c <= '9')
         || c == '+' || c == '-' || c == '.';
 }
 
 static bool
-http_is_uri_port_char(unsigned char c) {
+http_uri_is_port_char(unsigned char c) {
     return c >= '0' && c <= '9';
 }

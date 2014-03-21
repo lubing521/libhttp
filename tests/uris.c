@@ -104,6 +104,12 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
     HTTPT_END();
 
+    HTTPT_BEGIN("%68%74%74%70://%65%78%61%6d%70%6c%65.%63%6f%6d");
+    HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
+    HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_END();
+
 #define HTTPT_INVALID_URI(str_)                                         \
     do {                                                                \
         uri = http_uri_new(str_);                                       \
@@ -123,6 +129,12 @@ main(int argc, char **argv) {
 
     /* Invalid password */
     HTTPT_INVALID_URI("http://foo:@example.com");
+
+    /* Invalid escape sequence */
+    HTTPT_INVALID_URI("%6ttp://example.com");
+    HTTPT_INVALID_URI("http://example.co%");
+    HTTPT_INVALID_URI("http://example.co%6");
+    HTTPT_INVALID_URI("http://example.co%g");
 
 #undef HTTPT_INVALID_URI
 
