@@ -191,4 +191,15 @@ void http_server_error(struct http_server *, const char *, ...)
 void http_server_trace(struct http_server *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
+/* URIs */
+struct http_uri {
+    char *scheme;
+    char *user;
+    char *password;
+    char *host;
+    char *port;
+    char *path;
+    char *query;
+};
+
 #endif

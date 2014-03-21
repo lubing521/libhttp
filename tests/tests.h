@@ -90,16 +90,21 @@
         }                                                                     \
     } while (0)
 
-#define HTTPT_IS_EQUAL_STRING(val_, expected_)                            \
-    do {                                                                  \
-        const char *val_str__ = #val_;                                    \
-        const char *val__ = (val_);                                       \
-        const char *expected__ = (expected_);                             \
-                                                                          \
-        if (strcmp(val__, expected__) != 0) {                             \
-            HTTPT_REPORT_ERROR("%s is equal to \"%s\" instead of \"%s\"", \
-                               val_str__, val__, expected__);             \
-        }                                                                 \
+#define HTTPT_IS_EQUAL_STRING(val_, expected_)                                \
+    do {                                                                      \
+        const char *val_str__ = #val_;                                        \
+        const char *val__ = (val_);                                           \
+        const char *expected__ = (expected_);                                 \
+                                                                              \
+        if (!val__) {                                                         \
+            HTTPT_REPORT_ERROR("%s is null instead of being equal to \"%s\"", \
+                               val_str__, expected__);                        \
+        }                                                                     \
+                                                                              \
+        if (strcmp(val__, expected__) != 0) {                                 \
+            HTTPT_REPORT_ERROR("%s is equal to \"%s\" instead of \"%s\"",     \
+                               val_str__, val__, expected__);                 \
+        }                                                                     \
     } while (0)
 
 #endif

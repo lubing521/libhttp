@@ -190,4 +190,8 @@ int http_connection_write_body(struct http_connection *,
                                const char *, size_t);
 int http_connection_write_empty_body(struct http_connection *);
 
+/* URIs */
+struct http_uri *http_uri_new(const char *);
+void http_uri_delete(struct http_uri *);
+
 #endif

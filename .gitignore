@@ -6,5 +6,6 @@ session.vim
 
 /tests/messages
 /tests/tokens
+/tests/uris
 
 /utils/http-server
