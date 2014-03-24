@@ -431,6 +431,7 @@ http_connection_process_msg(struct http_connection *connection,
     struct http_route_base *route_base;
     http_msg_handler handler;
     bool do_shutdown;
+    enum http_route_match_result match_result;
 
     assert(msg->type == HTTP_MSG_REQUEST);
 
@@ -464,9 +465,20 @@ http_connection_process_msg(struct http_connection *connection,
     /* Find a route matching the URI of the message and call its handler. */
     handler = http_route_base_find_msg_handler(route_base,
                                                msg->u.request.method,
-                                               msg->request_uri->path);
+                                               msg->request_uri->path,
+                                               &match_result);
     if (!handler) {
-        http_connection_http_error(connection, HTTP_NOT_FOUND);
+        switch (match_result) {
+        case HTTP_ROUTE_MATCH_WRONG_METHOD:
+            http_connection_http_error(connection, HTTP_METHOD_NOT_ALLOWED);
+            break;
+
+        case HTTP_ROUTE_MATCH_WRONG_PATH:
+        default:
+            http_connection_http_error(connection, HTTP_NOT_FOUND);
+            break;
+        }
+
         goto end;
     }
 

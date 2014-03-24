@@ -122,25 +122,42 @@ main(int argc, char **argv) {
         }                                                         \
     } while (0)
 
-#define HTTPT_ROUTE_HANDLER_IS(method_, path_, handler_)            \
-    do {                                                            \
-        http_msg_handler handler;                                   \
-                                                                    \
-        handler = http_route_base_find_msg_handler(route_base,      \
-                                                   method_, path_); \
-        HTTPT_IS_EQUAL_PTR(handler, (http_msg_handler)handler_);    \
+#define HTTPT_ROUTE_HANDLER_IS_FOUND(method_, path_, handler_) \
+    do {                                                                \
+        http_msg_handler handler;                                       \
+        enum http_route_match_result match_result;                      \
+                                                                        \
+        handler = http_route_base_find_msg_handler(route_base,          \
+                                                   method_, path_,      \
+                                                   &match_result);      \
+        HTTPT_IS_EQUAL_PTR(handler, (http_msg_handler)handler_);        \
+        HTTPT_IS_EQUAL_INT(match_result, HTTP_ROUTE_MATCH_OK);          \
+    } while (0)
+
+#define HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(method_, path_, match_result_) \
+    do {                                                                \
+        http_msg_handler handler;                                       \
+        enum http_route_match_result match_result;                      \
+                                                                        \
+        handler = http_route_base_find_msg_handler(route_base,          \
+                                                   method_, path_,      \
+                                                   &match_result);      \
+        HTTPT_IS_EQUAL_PTR(handler, NULL);                              \
+        HTTPT_IS_EQUAL_INT(match_result, match_result_);                \
     } while (0)
 
     HTTPT_BEGIN();
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a", NULL);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/a",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
     HTTPT_END();
 
     HTTPT_BEGIN();
     HTTPT_ADD_ROUTE(HTTP_GET, "/a", 0x1);
     HTTPT_ADD_ROUTE(HTTP_POST, "/a", 0x2);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a", 0x1);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_POST, "/a", 0x2);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_PUT, "/a", NULL);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a", 0x1);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_POST, "/a", 0x2);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_PUT, "/a",
+                                     HTTP_ROUTE_MATCH_WRONG_METHOD);
     HTTPT_END();
 
     HTTPT_BEGIN();
@@ -149,24 +166,30 @@ main(int argc, char **argv) {
     HTTPT_ADD_ROUTE(HTTP_GET, "/a/b/c", 0x3);
     HTTPT_ADD_ROUTE(HTTP_GET, "/a/b/d", 0x4);
     HTTPT_ADD_ROUTE(HTTP_GET, "/e", 0x5);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/", NULL);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a", 0x1);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/b", 0x2);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/b/c", 0x3);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/b/d", 0x4);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/e", 0x5);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/b/f", NULL);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/b/d/f", NULL);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/g", NULL);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/h", NULL);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a", 0x1);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a/b", 0x2);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a/b/c", 0x3);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a/b/d", 0x4);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/e", 0x5);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/a/b/f",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/a/b/d/f",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/a/g",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/h",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
     HTTPT_END();
 
     HTTPT_BEGIN();
     HTTPT_ADD_ROUTE(HTTP_GET, "/", 0x1);
     HTTPT_ADD_ROUTE(HTTP_GET, "/a", 0x2);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/", 0x1);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a", 0x2);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/b", NULL);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/", 0x1);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a", 0x2);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/b",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
     HTTPT_END();
 
     /* Wildcards */
@@ -175,14 +198,17 @@ main(int argc, char **argv) {
     HTTPT_ADD_ROUTE(HTTP_GET, "/a/*", 0x2);
     HTTPT_ADD_ROUTE(HTTP_GET, "/a/b", 0x3);
     HTTPT_ADD_ROUTE(HTTP_GET, "/*/c", 0x4);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/", NULL);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a", 0x1);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/1", 0x2);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/1/2", NULL);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/b", 0x3);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/c", 0x2);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/d/c", 0x4);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/d/c/e", NULL);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a", 0x1);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a/1", 0x2);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/a/1/2",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a/b", 0x3);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a/c", 0x2);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/d/c", 0x4);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/d/c/e",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
     HTTPT_END();
 
     /* Named components */
@@ -191,20 +217,25 @@ main(int argc, char **argv) {
     HTTPT_ADD_ROUTE(HTTP_GET, "/a/:n", 0x2);
     HTTPT_ADD_ROUTE(HTTP_GET, "/a/b", 0x3);
     HTTPT_ADD_ROUTE(HTTP_GET, "/:n/c", 0x4);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/", NULL);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a", 0x1);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/1", 0x2);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/1/2", NULL);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/b", 0x3);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/a/c", 0x2);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/d/c", 0x4);
-    HTTPT_ROUTE_HANDLER_IS(HTTP_GET, "/d/c/e", NULL);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a", 0x1);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a/1", 0x2);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/a/1/2",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a/b", 0x3);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/a/c", 0x2);
+    HTTPT_ROUTE_HANDLER_IS_FOUND(HTTP_GET, "/d/c", 0x4);
+    HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(HTTP_GET, "/d/c/e",
+                                     HTTP_ROUTE_MATCH_WRONG_PATH);
     HTTPT_END();
 
 #undef HTTPT_ADD_ROUTE
 
 #undef HTTPT_BEGIN
 #undef HTTPT_END
+#undef HTTPT_ROUTE_HANDLER_IS_FOUND
+#undef HTTPT_ROUTE_HANDLER_IS_NOT_FOUND
 
     return 0;
 }

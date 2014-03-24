@@ -178,6 +178,12 @@ void http_connection_trace(struct http_connection *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
 /* Routes */
+enum http_route_match_result {
+    HTTP_ROUTE_MATCH_OK,
+    HTTP_ROUTE_MATCH_WRONG_METHOD,
+    HTTP_ROUTE_MATCH_WRONG_PATH,
+};
+
 enum http_route_component_type {
     HTTP_ROUTE_COMPONENT_STRING,
     HTTP_ROUTE_COMPONENT_WILDCARD,
@@ -222,7 +228,8 @@ void http_route_base_delete(struct http_route_base *);
 
 int http_route_base_add_route(struct http_route_base *, struct http_route *);
 http_msg_handler http_route_base_find_msg_handler(struct http_route_base *,
-                                                  enum http_method, const char *);
+                                                  enum http_method, const char *,
+                                                  enum http_route_match_result *);
 
 /* Servers */
 struct http_server {

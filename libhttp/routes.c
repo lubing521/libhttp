@@ -21,7 +21,8 @@
 #include "internal.h"
 
 static bool http_route_matches_request(const struct http_route *,
-                                       enum http_method, const char *);
+                                       enum http_method, const char *,
+                                       enum http_route_match_result *);
 static int http_route_cmp(const void *, const void *);
 
 static void http_route_base_sort_routes(struct http_route_base *);
@@ -245,28 +246,43 @@ http_route_base_add_route(struct http_route_base *base,
 
 http_msg_handler
 http_route_base_find_msg_handler(struct http_route_base *base,
-                                 enum http_method method, const char *path) {
+                                 enum http_method method, const char *path,
+                                 enum http_route_match_result *p_match_result) {
+    enum http_route_match_result match_result;
+
     if (!base->sorted)
         http_route_base_sort_routes(base);
 
+    match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
+
     for (size_t i = 0; i < base->nb_routes; i++) {
-        if (http_route_matches_request(base->routes[i], method, path))
+        enum http_route_match_result result;
+        if (http_route_matches_request(base->routes[i], method, path,
+                                       &result)) {
+            *p_match_result = HTTP_ROUTE_MATCH_OK;
             return base->routes[i]->msg_handler;
+        }
+
+        if (result == HTTP_ROUTE_MATCH_WRONG_METHOD) {
+            match_result = HTTP_ROUTE_MATCH_WRONG_METHOD;
+        } else if (result == HTTP_ROUTE_MATCH_WRONG_PATH
+                && match_result != HTTP_ROUTE_MATCH_WRONG_METHOD) {
+            match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
+        }
     }
 
+    *p_match_result = match_result;
     return NULL;
 }
 
 static bool
 http_route_matches_request(const struct http_route *route,
-                           enum http_method method, const char *path) {
+                           enum http_method method, const char *path,
+                           enum http_route_match_result *match_result) {
     const char *ptr, *start;
     size_t idx;
 
     assert(*path == '/');
-
-    if (route->method != method)
-        return false;
 
     ptr = path;
     idx = 0;
@@ -274,14 +290,12 @@ http_route_matches_request(const struct http_route *route,
     ptr++; /* skip the initial '/' */
     start = ptr;
 
-    if (route->nb_components == 0) {
-        /* Route for the root path */
-        return *ptr == '\0';
-    }
-
-    if (*ptr == '\0') {
-        /* Root path */
-        return route->nb_components == 0;
+    if (route->nb_components == 0 && *ptr == '\0') {
+        *match_result = HTTP_ROUTE_MATCH_OK;
+        goto end;
+    } else if (route->nb_components == 0 || *ptr == '\0') {
+        *match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
+        return false;
     }
 
     for (;;) {
@@ -296,6 +310,7 @@ http_route_matches_request(const struct http_route *route,
             case HTTP_ROUTE_COMPONENT_STRING:
                 if (strlen(component->value) != toklen
                  || memcmp(component->value, start, toklen) != 0) {
+                    *match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
                     return false;
                 }
                 break;
@@ -306,8 +321,10 @@ http_route_matches_request(const struct http_route *route,
             }
 
             if (*ptr == '\0') {
-                if (idx < route->nb_components - 1)
+                if (idx < route->nb_components - 1) {
+                    *match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
                     return false;
+                }
 
                 break;
             } else if (*ptr == '/') {
@@ -316,15 +333,24 @@ http_route_matches_request(const struct http_route *route,
                 start = ptr;
 
                 idx++;
-                if (idx >= route->nb_components)
+                if (idx >= route->nb_components) {
+                    *match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
                     return false;
+                }
             }
         } else {
             ptr++;
         }
     }
 
-    return true;
+end:
+    if (route->method == method) {
+        *match_result = HTTP_ROUTE_MATCH_OK;
+        return true;
+    } else {
+        *match_result = HTTP_ROUTE_MATCH_WRONG_METHOD;
+        return false;
+    }
 }
 
 static int
