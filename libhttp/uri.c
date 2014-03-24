@@ -77,9 +77,11 @@ http_uri_parse(const char *str, struct http_uri *uri) {
     /* Scheme */
     start = ptr;
 
-    if (!(*ptr >= 'a' && *ptr <= 'z')
-     && !(*ptr >= 'A' && *ptr <= 'Z')
-     && *ptr != '%') {
+    if (*ptr == '/') {
+        goto path;
+    } else if (!(*ptr >= 'a' && *ptr <= 'z')
+            && !(*ptr >= 'A' && *ptr <= 'Z')
+            && *ptr != '%') {
         http_set_error("invalid first character \\%hhu in scheme",
                        (unsigned char)*ptr);
         goto error;
@@ -244,6 +246,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
     }
 
     /* Path (optional, default '/') */
+path:
     if (*ptr == '/') {
         start = ptr;
 

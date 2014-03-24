@@ -35,6 +35,19 @@ main(int argc, char **argv) {
 #define HTTPT_END() \
     http_uri_delete(uri);
 
+    HTTPT_BEGIN("/");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_END();
+
+    HTTPT_BEGIN("/foo/bar");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/foo/bar");
+    HTTPT_END();
+
+    HTTPT_BEGIN("/foo/bar?a=1&b=2");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/foo/bar");
+    HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
+    HTTPT_END();
+
     HTTPT_BEGIN("http://example.com");
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
