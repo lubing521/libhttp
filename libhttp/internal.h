@@ -76,6 +76,8 @@ struct http_msg {
         } response;
     } u;
 
+    struct http_uri *request_uri;
+
     struct http_header *headers;
     size_t nb_headers;
     size_t headers_sz;
@@ -175,6 +177,53 @@ void http_connection_error(struct http_connection *, const char *, ...)
 void http_connection_trace(struct http_connection *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
+/* Routes */
+enum http_route_component_type {
+    HTTP_ROUTE_COMPONENT_STRING,
+    HTTP_ROUTE_COMPONENT_WILDCARD,
+    HTTP_ROUTE_COMPONENT_NAMED,
+};
+
+struct http_route_component {
+    enum http_route_component_type type;
+    char *value;
+};
+
+int http_route_components_parse(const char *,
+                                struct http_route_component **, size_t *);
+void http_route_components_free(struct http_route_component *, size_t);
+
+struct http_route {
+    enum http_method method;
+
+    char *path;
+    struct http_route_component *components;
+    size_t nb_components;
+
+    http_msg_handler msg_handler;
+};
+
+struct http_route *http_route_new(enum http_method, const char *,
+                                  http_msg_handler);
+void http_route_delete(struct http_route *);
+
+struct http_route_base {
+    struct http_route **routes;
+    size_t nb_routes;
+    size_t routes_sz;
+
+    void *msg_handler_arg;
+
+    bool sorted;
+};
+
+struct http_route_base *http_route_base_new(void);
+void http_route_base_delete(struct http_route_base *);
+
+int http_route_base_add_route(struct http_route_base *, struct http_route *);
+http_msg_handler http_route_base_find_msg_handler(struct http_route_base *,
+                                                  enum http_method, const char *);
+
 /* Servers */
 struct http_server {
     struct http_cfg cfg;
@@ -184,6 +233,8 @@ struct http_server {
 
     struct ht_table *listeners;
     struct ht_table *connections;
+
+    struct http_route_base *route_base;
 };
 
 void http_server_error(struct http_server *, const char *, ...)

@@ -111,6 +111,10 @@ http_server_listen(const struct http_cfg *cfg,
         goto error;
     }
 
+    server->route_base = http_route_base_new();
+    if (!server->route_base)
+        goto error;
+
     server->timeout_timer = evtimer_new(ev_base, http_server_on_timeout_timer,
                                         server);
     if (!server->timeout_timer) {
@@ -142,6 +146,8 @@ http_server_shutdown(struct http_server *server) {
     if (server->timeout_timer)
         event_free(server->timeout_timer);
 
+    http_route_base_delete(server->route_base);
+
     it = ht_table_iterate(server->connections);
     if (it) {
         struct http_connection *connection;
@@ -166,6 +172,29 @@ http_server_shutdown(struct http_server *server) {
 
     memset(server, 0, sizeof(struct http_server));
     http_free(server);
+}
+
+void
+http_server_set_msg_handler_arg(struct http_server *server, void *arg) {
+    server->route_base->msg_handler_arg = arg;
+}
+
+int
+http_server_add_route(struct http_server *server,
+                      enum http_method method, const char *path,
+                      http_msg_handler msg_handler) {
+    struct http_route *route;
+
+    route = http_route_new(method, path, msg_handler);
+    if (!route)
+        return -1;
+
+    if (http_route_base_add_route(server->route_base, route) == -1) {
+        http_route_delete(route);
+        return -1;
+    }
+
+    return 0;
 }
 
 void

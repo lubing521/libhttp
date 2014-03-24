@@ -5,6 +5,7 @@ session.vim
 .tags
 
 /tests/messages
+/tests/routes
 /tests/tokens
 /tests/uris
 

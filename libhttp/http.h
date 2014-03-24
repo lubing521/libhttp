@@ -171,9 +171,16 @@ struct http_cfg {
 extern struct http_cfg http_default_cfg;
 
 /* Server */
+typedef void (*http_msg_handler)(struct http_connection *,
+                                 const struct http_msg *, void *);
+
 struct http_server *http_server_listen(const struct http_cfg *,
                                        struct event_base *);
 void http_server_shutdown(struct http_server *server);
+
+void http_server_set_msg_handler_arg(struct http_server *, void *);
+int http_server_add_route(struct http_server *,
+                          enum http_method, const char *, http_msg_handler);
 
 /* Connections */
 void http_connection_close(struct http_connection *);

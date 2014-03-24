@@ -90,6 +90,26 @@
         }                                                                     \
     } while (0)
 
+#define HTTPT_IS_EQUAL_PTR(val_, expected_)                                   \
+    do {                                                                      \
+        const char *val_str__ = #val_;                                        \
+        const void * val__ = (val_);                                          \
+        const void * expected__ = (expected_);                                \
+                                                                              \
+        if (val__ && expected__) {                                            \
+            if (val__ != expected__) {                                        \
+                HTTPT_REPORT_ERROR("%s is equal to %p instead of %p",         \
+                                   val_str__, val__, expected__);             \
+            }                                                                 \
+        } else if (val__) {                                                   \
+            HTTPT_REPORT_ERROR("%s is equal to %p instead of being null",     \
+                               val_str__, val__);                             \
+        } else if (expected__) {                                              \
+            HTTPT_REPORT_ERROR("%s is null instead of being equal to %p",     \
+                               val_str__, expected__);                        \
+        }                                                                     \
+    } while (0)
+
 #define HTTPT_IS_EQUAL_STRING(val_, expected_)                                \
     do {                                                                      \
         const char *val_str__ = #val_;                                        \

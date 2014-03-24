@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <string.h>
 
@@ -427,16 +428,51 @@ http_connection_write_empty_body(struct http_connection *connection) {
 static void
 http_connection_process_msg(struct http_connection *connection,
                             struct http_msg *msg) {
+    struct http_route_base *route_base;
+    http_msg_handler handler;
     bool do_shutdown;
 
+    assert(msg->type == HTTP_MSG_REQUEST);
+
+    route_base = connection->server->route_base;
+
+    /* Version */
     connection->http_version = msg->version;
 
-    /* XXX Temporary */
-    http_connection_write_response(connection, HTTP_OK, NULL);
-    http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_header(connection, "Content-Length", "6");
-    http_connection_write_body(connection, "hello\n", 6);
+    /* URI */
+    if (strcmp(msg->u.request.uri, "*") == 0) {
+        /* '*' is used for requests that do not apply to a particular
+         * resource such as OPTIONS, but we do not currently support any of
+         * them. */
+        http_connection_trace(connection, "invalid uri: '*'");
+        http_connection_http_error(connection, HTTP_BAD_REQUEST);
+        goto end;
+    } else {
+        /* Absolute URI or absolute path */
+        msg->request_uri = http_uri_new(msg->u.request.uri);
+        if (!msg->request_uri) {
+            http_connection_trace(connection, "cannot parse uri: %s",
+                                  http_get_error());
+            http_connection_http_error(connection, HTTP_BAD_REQUEST);
+            goto end;
+        }
 
+        /* TODO If the URI has a host make sure that it is our own. If it is
+         * not, reject the request since we are not a proxy. */
+    }
+
+    /* Find a route matching the URI of the message and call its handler. */
+    handler = http_route_base_find_msg_handler(route_base,
+                                               msg->u.request.method,
+                                               msg->request_uri->path);
+    if (!handler) {
+        http_connection_http_error(connection, HTTP_NOT_FOUND);
+        goto end;
+    }
+
+    handler(connection, msg, route_base->msg_handler_arg);
+
+end:
     if (msg->version == HTTP_1_0) {
         do_shutdown = !(msg->connection_options & HTTP_CONNECTION_KEEP_ALIVE);
     } else if (msg->version == HTTP_1_1) {

@@ -318,6 +318,8 @@ http_msg_free(struct http_msg *msg) {
         break;
     }
 
+    http_uri_delete(msg->request_uri);
+
     for (size_t i = 0; i < msg->nb_headers; i++)
         http_header_free(msg->headers + i);
     http_free(msg->headers);
@@ -369,6 +371,29 @@ http_msg_can_have_body(const struct http_msg *msg) {
     }
 
     return false;
+}
+
+int
+http_request_process_uri(struct http_msg *msg) {
+    const char *uri;
+
+    assert(msg->type == HTTP_MSG_REQUEST);
+
+    uri = msg->u.request.uri;
+
+    if (strcmp(uri, "*") == 0) {
+        msg->request_uri = NULL;
+    } else {
+        /* Absolute URI or absolute path */
+        msg->request_uri = http_uri_new(uri);
+        if (!msg->request_uri)
+            return -1;
+
+        /* TODO If the URI has a host make sure that it is our own. If it is
+         * not, reject the request since we are not a proxy. */
+    }
+
+    return 0;
 }
 
 int

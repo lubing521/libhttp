@@ -50,6 +50,13 @@ static void https_on_trace(const char *, void *);
 static void https_on_request(struct http_connection *,
                              const struct http_msg *, void *);
 
+static void https_foo_get(struct http_connection *, const struct http_msg *,
+                          void *);
+static void https_foo_post(struct http_connection *, const struct http_msg *,
+                           void *);
+static void https_foo_bar_get(struct http_connection *,
+                              const struct http_msg *, void *);
+
 int
 main(int argc, char **argv) {
     struct http_cfg cfg;
@@ -136,6 +143,11 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
     https.server = http_server_listen(cfg, https.ev_base);
     if (!https.server)
         https_die("%s", http_get_error());
+
+    http_server_add_route(https.server, HTTP_GET, "/foo", https_foo_get);
+    http_server_add_route(https.server, HTTP_POST, "/foo", https_foo_post);
+    http_server_add_route(https.server, HTTP_GET, "/foo/bar",
+                          https_foo_bar_get);
 }
 
 static void
@@ -187,4 +199,55 @@ https_on_request(struct http_connection *connection,
 
     if (http_msg_body_length(msg) > 0)
         printf("body     %zu bytes\n", http_msg_body_length(msg));
+}
+
+static void
+https_foo_get(struct http_connection *connection, const struct http_msg *msg,
+              void *arg) {
+    const char *body;
+    size_t body_length;
+    char body_length_str[20];
+
+    body = "GET /foo\n";
+    body_length = strlen(body);
+    snprintf(body_length_str, sizeof(body_length_str), "%zu", body_length);
+
+    http_connection_write_response(connection, HTTP_OK, NULL);
+    http_connection_write_header(connection, "Content-Type", "text/plain");
+    http_connection_write_header(connection, "Content-Length", body_length_str);
+    http_connection_write_body(connection, body, body_length);
+}
+
+static void
+https_foo_post(struct http_connection *connection, const struct http_msg *msg,
+               void *arg) {
+    const char *body;
+    size_t body_length;
+    char body_length_str[20];
+
+    body = "POST /foo\n";
+    body_length = strlen(body);
+    snprintf(body_length_str, sizeof(body_length_str), "%zu", body_length);
+
+    http_connection_write_response(connection, HTTP_OK, NULL);
+    http_connection_write_header(connection, "Content-Type", "text/plain");
+    http_connection_write_header(connection, "Content-Length", body_length_str);
+    http_connection_write_body(connection, body, body_length);
+}
+
+static void
+https_foo_bar_get(struct http_connection *connection,
+                  const struct http_msg *msg, void *arg) {
+    const char *body;
+    size_t body_length;
+    char body_length_str[20];
+
+    body = "GET /foo/bar\n";
+    body_length = strlen(body);
+    snprintf(body_length_str, sizeof(body_length_str), "%zu", body_length);
+
+    http_connection_write_response(connection, HTTP_OK, NULL);
+    http_connection_write_header(connection, "Content-Type", "text/plain");
+    http_connection_write_header(connection, "Content-Length", body_length_str);
+    http_connection_write_body(connection, body, body_length);
 }
