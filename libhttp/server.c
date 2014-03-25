@@ -27,6 +27,9 @@
 #include "http.h"
 #include "internal.h"
 
+/* host + port + ipv6 brackets + colon */
+#define HTTP_HOST_PORT_BUFSZ (NI_MAXHOST + NI_MAXSERV + 2 + 1)
+
 static void http_server_on_timeout_timer(evutil_socket_t, short, void *);
 
 struct http_listener {
@@ -38,8 +41,8 @@ struct http_listener {
     char host[NI_MAXHOST];
     char numeric_host[NI_MAXHOST];
     char port[NI_MAXSERV];
-    char host_port[NI_MAXHOST + 1 + NI_MAXSERV];
-    char numeric_host_port[NI_MAXHOST + 1 + NI_MAXSERV];
+    char host_port[HTTP_HOST_PORT_BUFSZ];
+    char numeric_host_port[HTTP_HOST_PORT_BUFSZ];
 };
 
 static struct http_listener *http_listener_setup(struct http_server *,
@@ -365,10 +368,19 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
         goto error;
     }
 
-    snprintf(listener->host_port, sizeof(listener->host_port),
+    snprintf(listener->host_port, HTTP_HOST_PORT_BUFSZ,
              "%s:%s", listener->host, listener->port);
-    snprintf(listener->numeric_host_port, sizeof(listener->numeric_host_port),
-             "%s:%s", listener->numeric_host, listener->port);
+
+    if (ai->ai_family == AF_INET) {
+        snprintf(listener->numeric_host_port, HTTP_HOST_PORT_BUFSZ,
+                 "%s:%s", listener->numeric_host, listener->port);
+    } else if (ai->ai_family == AF_INET6) {
+        snprintf(listener->numeric_host_port, HTTP_HOST_PORT_BUFSZ,
+                 "[%s]:%s", listener->numeric_host, listener->port);
+    } else {
+        http_set_error("unknown address family %d", ai->ai_family);
+        goto error;
+    }
 
     listener->ev_sock = event_new(server->ev_base, listener->sock,
                                   EV_READ | EV_PERSIST,
@@ -384,8 +396,8 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
         goto error;
     }
 
-    http_server_trace(listener->server, "listening on %s:%s (%s)",
-                      listener->numeric_host, listener->port, listener->host);
+    http_server_trace(listener->server, "listening on %s (%s)",
+                      listener->numeric_host_port, listener->host_port);
     return listener;
 
 error:
