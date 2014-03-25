@@ -189,6 +189,20 @@ http_msg_body_length(const struct http_msg *msg) {
 }
 
 const char *
+http_msg_get_named_parameter(const struct http_msg *msg, const char *name) {
+    for (size_t i = 0; i < msg->u.request.nb_named_parameters; i++) {
+        struct http_named_parameter *parameter;
+
+        parameter = msg->u.request.named_parameters + i;
+
+        if (strcmp(parameter->name, name) == 0)
+            return parameter->value;
+    }
+
+    return NULL;
+}
+
+const char *
 http_header_name(const struct http_header *header) {
     return header->name;
 }

@@ -198,8 +198,9 @@ void http_connection_trace(struct http_connection *, const char *, ...)
 /* Routes */
 enum http_route_match_result {
     HTTP_ROUTE_MATCH_OK,
-    HTTP_ROUTE_MATCH_WRONG_METHOD,
     HTTP_ROUTE_MATCH_WRONG_PATH,
+    HTTP_ROUTE_MATCH_METHOD_NOT_FOUND,
+    HTTP_ROUTE_MATCH_PATH_NOT_FOUND,
 };
 
 enum http_route_component_type {
@@ -245,10 +246,12 @@ struct http_route_base *http_route_base_new(void);
 void http_route_base_delete(struct http_route_base *);
 
 int http_route_base_add_route(struct http_route_base *, struct http_route *);
-const struct http_route *
-http_route_base_find_route(struct http_route_base *,
-                           enum http_method, const char *,
-                           enum http_route_match_result *);
+int http_route_base_find_route(struct http_route_base *,
+                               enum http_method, const char *,
+                               const struct http_route **proute,
+                               enum http_route_match_result *,
+                               struct http_named_parameter **,
+                               size_t *);
 
 /* Servers */
 struct http_server {

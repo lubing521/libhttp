@@ -476,19 +476,29 @@ http_connection_process_msg(struct http_connection *connection,
     }
 
     /* Find a route matching the URI of the message and call its handler. */
-    route = http_route_base_find_route(route_base,
-                                       msg->u.request.method,
-                                       msg->u.request.uri->path,
-                                       &match_result);
+    if (http_route_base_find_route(route_base,
+                                   msg->u.request.method,
+                                   msg->u.request.uri->path,
+                                   &route, &match_result,
+                                   &msg->u.request.named_parameters,
+                                   &msg->u.request.nb_named_parameters) == -1) {
+        http_connection_http_error(connection, HTTP_INTERNAL_SERVER_ERROR);
+        goto end;
+    }
+
     if (!route) {
         switch (match_result) {
-        case HTTP_ROUTE_MATCH_WRONG_METHOD:
+        case HTTP_ROUTE_MATCH_METHOD_NOT_FOUND:
             http_connection_http_error(connection, HTTP_METHOD_NOT_ALLOWED);
+            break;
+
+        case HTTP_ROUTE_MATCH_PATH_NOT_FOUND:
+            http_connection_http_error(connection, HTTP_NOT_FOUND);
             break;
 
         case HTTP_ROUTE_MATCH_WRONG_PATH:
         default:
-            http_connection_http_error(connection, HTTP_NOT_FOUND);
+            http_connection_http_error(connection, HTTP_BAD_REQUEST);
             break;
         }
 

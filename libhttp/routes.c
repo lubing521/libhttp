@@ -21,11 +21,15 @@
 #include "internal.h"
 
 static bool http_route_matches_request(const struct http_route *,
-                                       enum http_method, const char *,
+                                       enum http_method,
+                                       const char **, size_t,
                                        enum http_route_match_result *);
 static int http_route_cmp(const void *, const void *);
 
 static void http_route_base_sort_routes(struct http_route_base *);
+
+static int http_path_parse(const char *, char ***, size_t *);
+static void http_path_free(char **, size_t);
 
 int
 http_route_components_parse(const char *path,
@@ -244,102 +248,144 @@ http_route_base_add_route(struct http_route_base *base,
     return 0;
 }
 
-const struct http_route *
+int
 http_route_base_find_route(struct http_route_base *base,
                            enum http_method method, const char *path,
-                           enum http_route_match_result *p_match_result) {
+                           const struct http_route **proute,
+                           enum http_route_match_result *p_match_result,
+                           struct http_named_parameter **p_named_parameters,
+                           size_t *p_nb_named_parameters) {
+    struct http_route *route;
+    struct http_named_parameter *named_parameters;
+    size_t nb_named_parameters;
     enum http_route_match_result match_result;
+    char **path_components;
+    size_t nb_path_components, idx;
 
     if (!base->sorted)
         http_route_base_sort_routes(base);
 
-    match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
+    if (*path != '/') {
+        *proute = NULL;
+        *p_match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
+        return 0;
+    }
+
+    if (http_path_parse(path, &path_components, &nb_path_components) == -1)
+        return -1;
+
+    route = NULL;
+    match_result = HTTP_ROUTE_MATCH_PATH_NOT_FOUND;
 
     for (size_t i = 0; i < base->nb_routes; i++) {
         enum http_route_match_result result;
-        if (http_route_matches_request(base->routes[i], method, path,
+        if (http_route_matches_request(base->routes[i], method,
+                                       (const char **)path_components,
+                                       nb_path_components,
                                        &result)) {
-            *p_match_result = HTTP_ROUTE_MATCH_OK;
-            return base->routes[i];
+            route = base->routes[i];
+            match_result = HTTP_ROUTE_MATCH_OK;
+            break;
         }
 
-        if (result == HTTP_ROUTE_MATCH_WRONG_METHOD) {
-            match_result = HTTP_ROUTE_MATCH_WRONG_METHOD;
-        } else if (result == HTTP_ROUTE_MATCH_WRONG_PATH
-                && match_result != HTTP_ROUTE_MATCH_WRONG_METHOD) {
-            match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
+        if (result == HTTP_ROUTE_MATCH_METHOD_NOT_FOUND) {
+            match_result = HTTP_ROUTE_MATCH_METHOD_NOT_FOUND;
+        } else if (result == HTTP_ROUTE_MATCH_PATH_NOT_FOUND
+                && match_result != HTTP_ROUTE_MATCH_METHOD_NOT_FOUND) {
+            match_result = HTTP_ROUTE_MATCH_PATH_NOT_FOUND;
         }
     }
 
+    if (!route) {
+        *proute = NULL;
+        *p_match_result = match_result;
+
+        http_path_free(path_components, nb_path_components);
+        return 0;
+    }
+
+    if (route->nb_components != nb_path_components) {
+        /* We made a mistake somewhere, it should not happen */
+        http_set_error("route/path size mismatch");
+        return -1;
+    }
+
+    /* Copy named parameters */
+    nb_named_parameters = 0;
+    for (size_t i = 0; i < route->nb_components; i++) {
+        if (route->components[i].type == HTTP_ROUTE_COMPONENT_NAMED)
+            nb_named_parameters++;
+    }
+
+    if (p_named_parameters && nb_named_parameters > 0) {
+        named_parameters = http_calloc(nb_named_parameters,
+                                       sizeof(struct http_named_parameter));
+        if (!named_parameters)
+            return -1;
+
+        idx = 0;
+        for (size_t i = 0; i < route->nb_components; i++) {
+            struct http_route_component *component;
+
+            component = route->components + i;
+
+            if (component->type != HTTP_ROUTE_COMPONENT_NAMED)
+                continue;
+
+            named_parameters[idx].name = http_strdup(component->value);
+            named_parameters[idx].value = http_strdup(path_components[i]);
+            idx++;
+        }
+    } else {
+        named_parameters = NULL;
+    }
+
+    http_path_free(path_components, nb_path_components);
+
+    *proute = route;
     *p_match_result = match_result;
-    return NULL;
+
+    if (p_named_parameters)
+        *p_named_parameters = named_parameters;
+    if (p_nb_named_parameters)
+        *p_nb_named_parameters = nb_named_parameters;
+    return 0;
 }
 
 static bool
 http_route_matches_request(const struct http_route *route,
-                           enum http_method method, const char *path,
+                           enum http_method method,
+                           const char **path_components,
+                           size_t nb_path_components,
                            enum http_route_match_result *match_result) {
-    const char *ptr, *start;
-    size_t idx;
-
-    assert(*path == '/');
-
-    ptr = path;
-    idx = 0;
-
-    ptr++; /* skip the initial '/' */
-    start = ptr;
-
-    if (route->nb_components == 0 && *ptr == '\0') {
+    if (route->nb_components == 0 && nb_path_components == 0) {
         *match_result = HTTP_ROUTE_MATCH_OK;
         goto end;
-    } else if (route->nb_components == 0 || *ptr == '\0') {
-        *match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
+    }
+
+    if (nb_path_components != route->nb_components) {
+        *match_result = HTTP_ROUTE_MATCH_PATH_NOT_FOUND;
         return false;
     }
 
-    for (;;) {
-        if (*ptr == '/' || *ptr == '\0') {
-            struct http_route_component *component;
-            size_t toklen;
+    for (size_t i = 0; i < nb_path_components; i++) {
+        struct http_route_component *route_component;
+        const char *path_component;
 
-            toklen = (size_t)(ptr - start);
+        route_component = route->components + i;
+        path_component = path_components[i];
 
-            component = route->components + idx;
-            switch (component->type) {
-            case HTTP_ROUTE_COMPONENT_STRING:
-                if (strlen(component->value) != toklen
-                 || memcmp(component->value, start, toklen) != 0) {
-                    *match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
-                    return false;
-                }
-                break;
-
-            case HTTP_ROUTE_COMPONENT_WILDCARD:
-            case HTTP_ROUTE_COMPONENT_NAMED:
-                break;
+        switch (route_component->type) {
+        case HTTP_ROUTE_COMPONENT_STRING:
+            if (strcmp(route_component->value, path_component) != 0) {
+                *match_result = HTTP_ROUTE_MATCH_PATH_NOT_FOUND;
+                return false;
             }
+            break;
 
-            if (*ptr == '\0') {
-                if (idx < route->nb_components - 1) {
-                    *match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
-                    return false;
-                }
-
-                break;
-            } else if (*ptr == '/') {
-                while (*ptr == '/')
-                    ptr++;
-                start = ptr;
-
-                idx++;
-                if (idx >= route->nb_components) {
-                    *match_result = HTTP_ROUTE_MATCH_WRONG_PATH;
-                    return false;
-                }
-            }
-        } else {
-            ptr++;
+        case HTTP_ROUTE_COMPONENT_WILDCARD:
+        case HTTP_ROUTE_COMPONENT_NAMED:
+            break;
         }
     }
 
@@ -348,7 +394,7 @@ end:
         *match_result = HTTP_ROUTE_MATCH_OK;
         return true;
     } else {
-        *match_result = HTTP_ROUTE_MATCH_WRONG_METHOD;
+        *match_result = HTTP_ROUTE_MATCH_METHOD_NOT_FOUND;
         return false;
     }
 }
@@ -392,4 +438,89 @@ http_route_base_sort_routes(struct http_route_base *base) {
           http_route_cmp);
 
     base->sorted = true;
+}
+
+static int
+http_path_parse(const char *path, char ***pcomponents, size_t *p_nb_components) {
+    char **components;
+    size_t nb_components, idx;
+    const char *ptr, *start;
+
+    /* Count the number of components */
+    ptr = path;
+    while (*ptr == '/')
+        ptr++;
+    if (*ptr == '\0') {
+        *p_nb_components = 0;
+        *pcomponents = NULL;
+        return 0;
+    }
+
+    nb_components = 0;
+    for (;;) {
+        if (*ptr == '/' || *ptr == '\0') {
+            while (*ptr == '/')
+                ptr++;
+
+            nb_components++;
+
+            if (*ptr == '\0')
+                break;
+        } else {
+            ptr++;
+        }
+    }
+
+    components = http_calloc(nb_components, sizeof(char *));
+    if (!components)
+        return -1;
+
+    /* Copy the components */
+    ptr = path;
+    while (*ptr == '/')
+        ptr++;
+    start = ptr;
+
+    idx = 0;
+    for (;;) {
+        if (*ptr == '/' || *ptr == '\0') {
+            size_t toklen;
+
+            toklen = (size_t)(ptr - start);
+            components[idx] = http_strndup(start, toklen);
+            if (!components[idx])
+                goto error;
+
+            idx++;
+            if (idx > nb_components) {
+                /* We did not count correctly */
+                http_set_error("error while parsing path");
+                goto error;
+            }
+
+            while (*ptr == '/')
+                ptr++;
+            start = ptr;
+
+            if (*ptr == '\0')
+                break;
+        } else {
+            ptr++;
+        }
+    }
+
+    *pcomponents = components;
+    *p_nb_components = nb_components;
+    return 0;
+
+error:
+    http_path_free(components, nb_components);
+    return -1;
+}
+
+static void
+http_path_free(char **components, size_t nb_components) {
+    for (size_t i = 0; i < nb_components; i++)
+        http_free(components[i]);
+    http_free(components);
 }

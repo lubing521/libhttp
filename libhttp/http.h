@@ -136,6 +136,8 @@ const char *http_msg_get_header(const struct http_msg *, const char *);
 const char *http_msg_body(const struct http_msg *);
 size_t http_msg_body_length(const struct http_msg *);
 
+const char *http_msg_get_named_parameter(const struct http_msg *, const char *);
+
 const char *http_header_name(const struct http_header *);
 const char *http_header_value(const struct http_header *);
 
