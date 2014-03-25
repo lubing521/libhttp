@@ -270,6 +270,8 @@ void http_server_trace(struct http_server *, const char *, ...)
 
 bool http_server_does_listen_on(const struct http_server *,
                                 const char *, const char *);
+bool http_server_does_listen_on_host_string(const struct http_server *,
+                                            const char *);
 
 /* URIs */
 struct http_uri {

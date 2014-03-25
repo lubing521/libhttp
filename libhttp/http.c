@@ -947,9 +947,10 @@ http_msg_process_headers(struct http_parser *parser) {
             host = header->value;
 
             if (parser->server
-             && !http_server_does_listen_on(parser->server, host, NULL)) {
+             && !http_server_does_listen_on_host_string(parser->server, host)) {
                 HTTP_ERROR(HTTP_BAD_REQUEST,
-                           "Host header is not a hostname we are listening on");
+                           "Host header '%s' is not a hostname we are "
+                           "listening on", host);
             }
         } else if (HTTP_HEADER_IS("Connection")) {
             char token[32];

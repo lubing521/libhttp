@@ -38,6 +38,8 @@ struct http_listener {
     char host[NI_MAXHOST];
     char numeric_host[NI_MAXHOST];
     char port[NI_MAXSERV];
+    char host_port[NI_MAXHOST + 1 + NI_MAXSERV];
+    char numeric_host_port[NI_MAXHOST + 1 + NI_MAXSERV];
 };
 
 static struct http_listener *http_listener_setup(struct http_server *,
@@ -251,6 +253,30 @@ http_server_does_listen_on(const struct http_server *server,
     return false;
 }
 
+bool
+http_server_does_listen_on_host_string(const struct http_server *server,
+                                       const char *host_string) {
+    struct ht_table_iterator *it;
+
+    it = ht_table_iterate(server->listeners);
+    if (it) {
+        struct http_listener *listener;
+
+        while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1) {
+            if (strcmp(host_string, listener->host) == 0
+             || strcmp(host_string, listener->numeric_host) == 0
+             || strcmp(host_string, listener->host_port) == 0
+             || strcmp(host_string, listener->numeric_host_port) == 0) {
+                return true;
+            }
+        }
+
+        ht_table_iterator_delete(it);
+    }
+
+    return false;
+}
+
 static void
 http_server_on_timeout_timer(evutil_socket_t fd, short events, void *arg) {
     struct ht_table_iterator *it;
@@ -338,6 +364,11 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
         http_set_error("cannot resolve address: %s", gai_strerror(ret));
         goto error;
     }
+
+    snprintf(listener->host_port, sizeof(listener->host_port),
+             "%s:%s", listener->host, listener->port);
+    snprintf(listener->numeric_host_port, sizeof(listener->numeric_host_port),
+             "%s:%s", listener->numeric_host, listener->port);
 
     listener->ev_sock = event_new(server->ev_base, listener->sock,
                                   EV_READ | EV_PERSIST,
