@@ -215,8 +215,8 @@ http_uri_parse(const char *str, struct http_uri *uri) {
 
         start = ptr;
 
-        while (*ptr != '\0') {
-            if (*ptr == '/') {
+        for (;;) {
+            if (*ptr == '/' || *ptr == '\0') {
                 toklen = (size_t)(ptr - start);
                 if (toklen == 0) {
                     http_set_error("empty port");
@@ -235,13 +235,6 @@ http_uri_parse(const char *str, struct http_uri *uri) {
             }
 
             ptr++;
-        }
-
-        if (!uri->port) {
-            toklen = (size_t)(ptr - start);
-            uri->port = http_uri_decode_component(start, toklen);
-            if (!uri->port)
-                goto error;
         }
     }
 

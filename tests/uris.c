@@ -117,7 +117,7 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
     HTTPT_END();
 
-    HTTPT_BEGIN("%68%74%74%70://%65%78%61%6d%70%6c%65.%63%6f%6d");
+    HTTPT_BEGIN("%68%74%74%70://%65%78%61%6d%70%6c%65.%63%6f%6D");
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
     HTTPT_IS_EQUAL_STRING(uri->path, "/");
@@ -129,6 +129,10 @@ main(int argc, char **argv) {
         if (uri)                                                        \
             HTTPT_DIE("%s:%d: parsed invalid uri", __FILE__, __LINE__); \
     } while (0)
+
+    /* Invalid string */
+    HTTPT_INVALID_URI("");
+    HTTPT_INVALID_URI("http");
 
     /* Invalid scheme */
     HTTPT_INVALID_URI("42foo://example.com");
@@ -142,6 +146,15 @@ main(int argc, char **argv) {
 
     /* Invalid password */
     HTTPT_INVALID_URI("http://foo:@example.com");
+
+    /* Invalid host */
+    HTTPT_INVALID_URI("http:///");
+    HTTPT_INVALID_URI("http://foo@/");
+
+    /* Invalid port */
+    HTTPT_INVALID_URI("http://example.com:");
+    HTTPT_INVALID_URI("http://example.com:/");
+    HTTPT_INVALID_URI("http://example.com:?a=1&b=2");
 
     /* Invalid escape sequence */
     HTTPT_INVALID_URI("%6ttp://example.com");
