@@ -72,7 +72,7 @@ doc_HTML= $(subst .mkd,.html,$(doc_SRC))
 # Rules
 all: $(libhttp_LIB) $(tests_BIN) $(utils_BIN) $(doc_HTML)
 
-$(libhttp_LIB): $(libhttp_INC)
+$(libhttp_OBJ): $(libhttp_INC)
 $(libhttp_LIB): $(libhttp_OBJ)
 	$(AR) cr $@ $(libhttp_OBJ)
 

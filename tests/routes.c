@@ -124,25 +124,26 @@ main(int argc, char **argv) {
 
 #define HTTPT_ROUTE_HANDLER_IS_FOUND(method_, path_, handler_) \
     do {                                                                \
+        const struct http_route *route;                                 \
         http_msg_handler handler;                                       \
         enum http_route_match_result match_result;                      \
                                                                         \
-        handler = http_route_base_find_msg_handler(route_base,          \
-                                                   method_, path_,      \
-                                                   &match_result);      \
+        route = http_route_base_find_route(route_base, method_, path_,  \
+                                           &match_result);              \
+        handler = route->msg_handler;                                   \
+                                                                        \
         HTTPT_IS_EQUAL_PTR(handler, (http_msg_handler)handler_);        \
         HTTPT_IS_EQUAL_INT(match_result, HTTP_ROUTE_MATCH_OK);          \
     } while (0)
 
 #define HTTPT_ROUTE_HANDLER_IS_NOT_FOUND(method_, path_, match_result_) \
     do {                                                                \
-        http_msg_handler handler;                                       \
+        const struct http_route *route;                                 \
         enum http_route_match_result match_result;                      \
                                                                         \
-        handler = http_route_base_find_msg_handler(route_base,          \
-                                                   method_, path_,      \
+        route = http_route_base_find_route(route_base, method_, path_,  \
                                                    &match_result);      \
-        HTTPT_IS_EQUAL_PTR(handler, NULL);                              \
+        HTTPT_IS_EQUAL_PTR(route, NULL);                                \
         HTTPT_IS_EQUAL_INT(match_result, match_result_);                \
     } while (0)
 

@@ -430,7 +430,7 @@ static void
 http_connection_process_msg(struct http_connection *connection,
                             struct http_msg *msg) {
     struct http_route_base *route_base;
-    http_msg_handler handler;
+    const struct http_route *route;
     bool do_shutdown;
     enum http_route_match_result match_result;
 
@@ -442,7 +442,7 @@ http_connection_process_msg(struct http_connection *connection,
     connection->http_version = msg->version;
 
     /* URI */
-    if (strcmp(msg->u.request.uri, "*") == 0) {
+    if (strcmp(msg->u.request.uri_string, "*") == 0) {
         /* '*' is used for requests that do not apply to a particular
          * resource such as OPTIONS, but we do not currently support any of
          * them. */
@@ -451,8 +451,8 @@ http_connection_process_msg(struct http_connection *connection,
         goto end;
     } else {
         /* Absolute URI or absolute path */
-        msg->request_uri = http_uri_new(msg->u.request.uri);
-        if (!msg->request_uri) {
+        msg->u.request.uri = http_uri_new(msg->u.request.uri_string);
+        if (!msg->u.request.uri) {
             http_connection_trace(connection, "cannot parse uri: %s",
                                   http_get_error());
             http_connection_http_error(connection, HTTP_BAD_REQUEST);
@@ -462,10 +462,10 @@ http_connection_process_msg(struct http_connection *connection,
         /* We have to accept absolute URIs (RFC 2616 5.1.2) but since we do
          * not act as a proxy, we only accept them when the host and port of
          * URI is an address we are listening on. */
-        if (msg->request_uri->host) {
+        if (msg->u.request.uri->host) {
             if (!http_server_does_listen_on(connection->server,
-                                            msg->request_uri->host,
-                                            msg->request_uri->port)) {
+                                            msg->u.request.uri->host,
+                                            msg->u.request.uri->port)) {
                 http_connection_trace(connection,
                                       "absolute uri is not associated with an "
                                       "address we are listening on");
@@ -476,11 +476,11 @@ http_connection_process_msg(struct http_connection *connection,
     }
 
     /* Find a route matching the URI of the message and call its handler. */
-    handler = http_route_base_find_msg_handler(route_base,
-                                               msg->u.request.method,
-                                               msg->request_uri->path,
-                                               &match_result);
-    if (!handler) {
+    route = http_route_base_find_route(route_base,
+                                       msg->u.request.method,
+                                       msg->u.request.uri->path,
+                                       &match_result);
+    if (!route) {
         switch (match_result) {
         case HTTP_ROUTE_MATCH_WRONG_METHOD:
             http_connection_http_error(connection, HTTP_METHOD_NOT_ALLOWED);
@@ -495,7 +495,7 @@ http_connection_process_msg(struct http_connection *connection,
         goto end;
     }
 
-    handler(connection, msg, route_base->msg_handler_arg);
+    route->msg_handler(connection, msg, route_base->msg_handler_arg);
 
 end:
     if (msg->version == HTTP_1_0) {

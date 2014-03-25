@@ -150,7 +150,7 @@ http_request_method(const struct http_msg *msg) {
 const char *
 http_request_uri(const struct http_msg *msg) {
     assert(msg->type == HTTP_MSG_REQUEST);
-    return msg->u.request.uri;
+    return msg->u.request.uri_string;
 }
 
 size_t
@@ -300,6 +300,30 @@ http_header_free(struct http_header *header) {
 }
 
 void
+http_named_parameter_free(struct http_named_parameter *parameter) {
+    if (!parameter)
+        return;
+
+    http_free(parameter->name);
+    http_free(parameter->value);
+
+    memset(parameter, 0, sizeof(struct http_named_parameter));
+}
+
+void
+http_request_free(struct http_request *request) {
+    http_uri_delete(request->uri);
+
+    for (size_t i = 0; i < request->nb_named_parameters; i++)
+        http_named_parameter_free(request->named_parameters + i);
+    http_free(request->named_parameters);
+}
+
+void
+http_response_free(struct http_response *response) {
+}
+
+void
 http_msg_init(struct http_msg *msg) {
     memset(msg, 0, sizeof(struct http_msg));
 }
@@ -311,14 +335,13 @@ http_msg_free(struct http_msg *msg) {
 
     switch (msg->type) {
     case HTTP_MSG_REQUEST:
-        http_free(msg->u.request.uri);
+        http_request_free(&msg->u.request);
         break;
 
     case HTTP_MSG_RESPONSE:
+        http_response_free(&msg->u.response);
         break;
     }
-
-    http_uri_delete(msg->request_uri);
 
     for (size_t i = 0; i < msg->nb_headers; i++)
         http_header_free(msg->headers + i);
@@ -379,14 +402,14 @@ http_request_process_uri(struct http_msg *msg) {
 
     assert(msg->type == HTTP_MSG_REQUEST);
 
-    uri = msg->u.request.uri;
+    uri = msg->u.request.uri_string;
 
     if (strcmp(uri, "*") == 0) {
-        msg->request_uri = NULL;
+        msg->u.request.uri = NULL;
     } else {
         /* Absolute URI or absolute path */
-        msg->request_uri = http_uri_new(uri);
-        if (!msg->request_uri)
+        msg->u.request.uri = http_uri_new(uri);
+        if (!msg->u.request.uri)
             return -1;
 
         /* TODO If the URI has a host make sure that it is our own. If it is
@@ -660,8 +683,8 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
                 HTTP_ERROR(HTTP_REQUEST_URI_TOO_LONG, "request uri too large");
             }
 
-            msg->u.request.uri = http_strndup(start, toklen);
-            if (!msg->u.request.uri)
+            msg->u.request.uri_string = http_strndup(start, toklen);
+            if (!msg->u.request.uri_string)
                 return -1;
 
             found = true;

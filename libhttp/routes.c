@@ -244,10 +244,10 @@ http_route_base_add_route(struct http_route_base *base,
     return 0;
 }
 
-http_msg_handler
-http_route_base_find_msg_handler(struct http_route_base *base,
-                                 enum http_method method, const char *path,
-                                 enum http_route_match_result *p_match_result) {
+const struct http_route *
+http_route_base_find_route(struct http_route_base *base,
+                           enum http_method method, const char *path,
+                           enum http_route_match_result *p_match_result) {
     enum http_route_match_result match_result;
 
     if (!base->sorted)
@@ -260,7 +260,7 @@ http_route_base_find_msg_handler(struct http_route_base *base,
         if (http_route_matches_request(base->routes[i], method, path,
                                        &result)) {
             *p_match_result = HTTP_ROUTE_MATCH_OK;
-            return base->routes[i]->msg_handler;
+            return base->routes[i];
         }
 
         if (result == HTTP_ROUTE_MATCH_WRONG_METHOD) {

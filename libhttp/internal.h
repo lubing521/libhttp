@@ -60,23 +60,40 @@ struct http_header {
 void http_header_init(struct http_header *);
 void http_header_free(struct http_header *);
 
+struct http_named_parameter {
+    char *name;
+    char *value;
+};
+
+void http_named_parameter_free(struct http_named_parameter *);
+
+struct http_request {
+    enum http_method method;
+    char *uri_string;
+
+    struct http_uri *uri;
+
+    struct http_named_parameter *named_parameters;
+    size_t nb_named_parameters;
+};
+
+void http_request_free(struct http_request *);
+
+struct http_response {
+    enum http_status_code status_code;
+    char *reason_phrase;
+};
+
+void http_response_free(struct http_response *);
+
 struct http_msg {
     enum http_msg_type type;
     enum http_version version;
 
     union {
-        struct {
-            enum http_method method;
-            char *uri;
-        } request;
-
-        struct {
-            enum http_status_code status_code;
-            char *reason_phrase;
-        } response;
+        struct http_request request;
+        struct http_response response;
     } u;
-
-    struct http_uri *request_uri;
 
     struct http_header *headers;
     size_t nb_headers;
@@ -228,9 +245,10 @@ struct http_route_base *http_route_base_new(void);
 void http_route_base_delete(struct http_route_base *);
 
 int http_route_base_add_route(struct http_route_base *, struct http_route *);
-http_msg_handler http_route_base_find_msg_handler(struct http_route_base *,
-                                                  enum http_method, const char *,
-                                                  enum http_route_match_result *);
+const struct http_route *
+http_route_base_find_route(struct http_route_base *,
+                           enum http_method, const char *,
+                           enum http_route_match_result *);
 
 /* Servers */
 struct http_server {
