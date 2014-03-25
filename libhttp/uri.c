@@ -25,6 +25,8 @@ static char *http_uri_decode_component(const char *, size_t);
 static int http_read_hex_digit(unsigned char, int *);
 
 static bool http_uri_is_scheme_char(unsigned char);
+static bool http_uri_is_ipv4_addr_char(unsigned char);
+static bool http_uri_is_ipv6_addr_char(unsigned char);
 static bool http_uri_is_port_char(unsigned char);
 
 struct http_uri *
@@ -184,22 +186,79 @@ http_uri_parse(const char *str, struct http_uri *uri) {
 
     /* Host */
     start = ptr;
-    for (;;) {
-        if (*ptr == '/' || *ptr == ':' || *ptr == '\0') {
-            toklen = (size_t)(ptr - start);
-            if (toklen == 0) {
-                http_set_error("empty host");
+    if (*start >= '0' && *start <= '9') {
+        /* IPv4 address */
+        for (;;) {
+            if (*ptr == '/' || *ptr == ':' || *ptr == '\0') {
+                toklen = (size_t)(ptr - start);
+                if (toklen == 0) {
+                    http_set_error("empty host");
+                    goto error;
+                }
+
+                uri->host = http_uri_decode_component(start, toklen);
+                if (!uri->host)
+                    goto error;
+
+                break;
+            } else if (!http_uri_is_ipv4_addr_char((unsigned char)*ptr)) {
+                http_set_error("invalid character \\%hhu in ipv4 address",
+                               (unsigned char)*ptr);
                 goto error;
             }
 
-            uri->host = http_uri_decode_component(start, toklen);
-            if (!uri->host)
-                goto error;
-
-            break;
+            ptr++;
         }
+    } else if (*start == '[') {
+        ptr++; /* '[' */
+        start = ptr;
 
-        ptr++;
+        /* IPv6 address */
+        for (;;) {
+            if (*ptr == ']') {
+                toklen = (size_t)(ptr - start);
+                if (toklen == 0) {
+                    http_set_error("empty host");
+                    goto error;
+                }
+
+                uri->host = http_uri_decode_component(start, toklen);
+                if (!uri->host)
+                    goto error;
+
+                ptr++; /* ']' */
+
+                break;
+            } else if (*ptr == '\0') {
+                http_set_error("truncated ipv6 address");
+                goto error;
+            } else if (!http_uri_is_ipv6_addr_char((unsigned char)*ptr)) {
+                http_set_error("invalid character \\%hhu in ipv6 address",
+                               (unsigned char)*ptr);
+                goto error;
+            }
+
+            ptr++;
+        }
+    } else {
+        /* Hostname */
+        for (;;) {
+            if (*ptr == '/' || *ptr == ':' || *ptr == '\0') {
+                toklen = (size_t)(ptr - start);
+                if (toklen == 0) {
+                    http_set_error("empty host");
+                    goto error;
+                }
+
+                uri->host = http_uri_decode_component(start, toklen);
+                if (!uri->host)
+                    goto error;
+
+                break;
+            }
+
+            ptr++;
+        }
     }
 
     /* Port (optional) */
@@ -343,6 +402,18 @@ http_uri_is_scheme_char(unsigned char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
         || (c >= '0' && c <= '9')
         || c == '+' || c == '-' || c == '.';
+}
+
+static bool
+http_uri_is_ipv4_addr_char(unsigned char c) {
+    return (c >= '0' && c <= '9') || c == '.';
+}
+
+static bool
+http_uri_is_ipv6_addr_char(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+        || (c >= '0' && c <= '9')
+        || c == ':';
 }
 
 static bool

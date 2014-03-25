@@ -48,6 +48,39 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
     HTTPT_END();
 
+    HTTPT_BEGIN("http://127.0.0.1");
+    HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
+    HTTPT_IS_EQUAL_STRING(uri->host, "127.0.0.1");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_END();
+
+    HTTPT_BEGIN("http://127.0.0.1:443");
+    HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
+    HTTPT_IS_EQUAL_STRING(uri->host, "127.0.0.1");
+    HTTPT_IS_EQUAL_STRING(uri->port, "443");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_END();
+
+    HTTPT_BEGIN("http://[::1]");
+    HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
+    HTTPT_IS_EQUAL_STRING(uri->host, "::1");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_END();
+
+    HTTPT_BEGIN("http://[::1]:443");
+    HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
+    HTTPT_IS_EQUAL_STRING(uri->host, "::1");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_IS_EQUAL_STRING(uri->port, "443");
+    HTTPT_END();
+
+    HTTPT_BEGIN("http://[fe80::1e6f:65ff:EA21:A373]:443");
+    HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
+    HTTPT_IS_EQUAL_STRING(uri->host, "fe80::1e6f:65ff:EA21:A373");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_IS_EQUAL_STRING(uri->port, "443");
+    HTTPT_END();
+
     HTTPT_BEGIN("http://example.com");
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
@@ -150,6 +183,10 @@ main(int argc, char **argv) {
     /* Invalid host */
     HTTPT_INVALID_URI("http:///");
     HTTPT_INVALID_URI("http://foo@/");
+
+    /* Invalid numeric address */
+    HTTPT_INVALID_URI("http://2foo.com");
+    HTTPT_INVALID_URI("http://[foo.com]");
 
     /* Invalid port */
     HTTPT_INVALID_URI("http://example.com:");
