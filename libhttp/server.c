@@ -229,7 +229,7 @@ http_server_trace(struct http_server *server, const char *fmt, ...) {
 }
 
 bool
-http_server_does_listen_on(struct http_server *server,
+http_server_does_listen_on(const struct http_server *server,
                            const char *host, const char *port) {
     struct ht_table_iterator *it;
 

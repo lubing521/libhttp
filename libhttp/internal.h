@@ -118,6 +118,7 @@ struct http_parser {
     enum http_status_code status_code;
     char errmsg[HTTP_ERROR_BUFSZ];
 
+    const struct http_server *server;
     const struct http_cfg *cfg;
 };
 
@@ -249,7 +250,7 @@ void http_server_error(struct http_server *, const char *, ...)
 void http_server_trace(struct http_server *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
-bool http_server_does_listen_on(struct http_server *,
+bool http_server_does_listen_on(const struct http_server *,
                                 const char *, const char *);
 
 /* URIs */

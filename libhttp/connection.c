@@ -77,8 +77,7 @@ http_connection_setup(struct http_server *server, int sock) {
         goto error;
     }
 
-    connection->parser.msg.type = HTTP_MSG_REQUEST;
-    connection->parser.cfg = &server->cfg;
+    connection->parser.server = server;
 
     connection->http_version = HTTP_1_1;
 
@@ -300,6 +299,8 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                 http_connection_close(connection);
                 return;
             }
+
+            connection->parser.server = connection->server;
         }
     }
 

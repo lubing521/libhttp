@@ -907,8 +907,11 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
 static int
 http_msg_process_headers(struct http_parser *parser) {
     struct http_msg *msg;
+    const char *host;
 
     msg = &parser->msg;
+
+    host = NULL;
 
     for (size_t i = 0; i < msg->nb_headers; i++) {
         const struct http_header *header;
@@ -917,7 +920,15 @@ http_msg_process_headers(struct http_parser *parser) {
 
 #define HTTP_HEADER_IS(name_) (strcasecmp(header->name, name_) == 0)
 
-        if (HTTP_HEADER_IS("Connection")) {
+        if (HTTP_HEADER_IS("Host")) {
+            host = header->value;
+
+            if (parser->server
+             && !http_server_does_listen_on(parser->server, host, NULL)) {
+                HTTP_ERROR(HTTP_BAD_REQUEST,
+                           "Host header is not a hostname we are listening on");
+            }
+        } else if (HTTP_HEADER_IS("Connection")) {
             char token[32];
             const char *list, *end;
 
@@ -954,6 +965,15 @@ ignore_header:
         continue;
 
 #undef HTTP_HEADER_IS
+    }
+
+    if (msg->type == HTTP_MSG_REQUEST) {
+        /* A client MUST include a Host header field in all HTTP/1.1 request
+         * messages [...] All Internet-based HTTP/1.1 servers MUST respond
+         * with a 400 (Bad Request) status code to any HTTP/1.1 request
+         * message which lacks a Host header field. */
+        if (msg->version == HTTP_1_1 && !host)
+            HTTP_ERROR(HTTP_BAD_REQUEST, "missing Host header");
     }
 
     return 1;
