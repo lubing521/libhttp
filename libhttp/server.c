@@ -36,6 +36,7 @@ struct http_listener {
     struct event *ev_sock;
 
     char host[NI_MAXHOST];
+    char numeric_host[NI_MAXHOST];
     char port[NI_MAXSERV];
 };
 
@@ -227,6 +228,29 @@ http_server_trace(struct http_server *server, const char *fmt, ...) {
     server->cfg.trace_hook(buf, server->cfg.hook_arg);
 }
 
+bool
+http_server_does_listen_on(struct http_server *server,
+                           const char *host, const char *port) {
+    struct ht_table_iterator *it;
+
+    it = ht_table_iterate(server->listeners);
+    if (it) {
+        struct http_listener *listener;
+
+        while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1) {
+            if ((strcmp(host, listener->host) == 0
+                 || strcmp(host, listener->numeric_host) == 0)
+                && (!port || (strcmp(port, listener->port) == 0))) {
+                return true;
+            }
+        }
+
+        ht_table_iterator_delete(it);
+    }
+
+    return false;
+}
+
 static void
 http_server_on_timeout_timer(evutil_socket_t fd, short events, void *arg) {
     struct ht_table_iterator *it;
@@ -298,9 +322,18 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
     }
 
     ret = getnameinfo(ai->ai_addr, ai->ai_addrlen,
-                      listener->host, NI_MAXHOST,
+                      listener->numeric_host, NI_MAXHOST,
                       listener->port, NI_MAXSERV,
                       NI_NUMERICHOST | NI_NUMERICSERV);
+    if (ret != 0) {
+        http_set_error("cannot resolve address: %s", gai_strerror(ret));
+        goto error;
+    }
+
+    ret = getnameinfo(ai->ai_addr, ai->ai_addrlen,
+                      listener->host, NI_MAXHOST,
+                      NULL, 0,
+                      0);
     if (ret != 0) {
         http_set_error("cannot resolve address: %s", gai_strerror(ret));
         goto error;
@@ -320,8 +353,8 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
         goto error;
     }
 
-    http_server_trace(listener->server, "listening on %s:%s",
-                      listener->host, listener->port);
+    http_server_trace(listener->server, "listening on %s:%s (%s)",
+                      listener->numeric_host, listener->port, listener->host);
     return listener;
 
 error:

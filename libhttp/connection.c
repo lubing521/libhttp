@@ -458,8 +458,20 @@ http_connection_process_msg(struct http_connection *connection,
             goto end;
         }
 
-        /* TODO If the URI has a host make sure that it is our own. If it is
-         * not, reject the request since we are not a proxy. */
+        /* We have to accept absolute URIs (RFC 2616 5.1.2) but since we do
+         * not act as a proxy, we only accept them when the host and port of
+         * URI is an address we are listening on. */
+        if (msg->request_uri->host) {
+            if (!http_server_does_listen_on(connection->server,
+                                            msg->request_uri->host,
+                                            msg->request_uri->port)) {
+                http_connection_trace(connection,
+                                      "absolute uri is not associated with an "
+                                      "address we are listening on");
+                http_connection_http_error(connection, HTTP_BAD_REQUEST);
+                goto end;
+            }
+        }
     }
 
     /* Find a route matching the URI of the message and call its handler. */

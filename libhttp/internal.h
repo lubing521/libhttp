@@ -249,6 +249,9 @@ void http_server_error(struct http_server *, const char *, ...)
 void http_server_trace(struct http_server *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
+bool http_server_does_listen_on(struct http_server *,
+                                const char *, const char *);
+
 /* URIs */
 struct http_uri {
     char *scheme;
