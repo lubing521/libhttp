@@ -87,12 +87,13 @@ http_uri_parse(const char *str, struct http_uri *uri) {
         goto error;
     }
 
-    while (*ptr != '\0') {
-        if (*ptr == ':') {
+    for (;;) {
+        if (*ptr == ':' || *ptr == '\0') {
             toklen = (size_t)(ptr - start);
             uri->scheme = http_uri_decode_component(start, toklen);
             if (!uri->scheme)
                 goto error;
+
             break;
         } else if (!http_uri_is_scheme_char((unsigned char)*ptr)
                 && *ptr != '%') {
@@ -102,11 +103,6 @@ http_uri_parse(const char *str, struct http_uri *uri) {
         }
 
         ptr++;
-    }
-
-    if (!uri->scheme) {
-        http_set_error("scheme not found");
-        goto error;
     }
 
     /* Skip '://' */
@@ -154,15 +150,18 @@ http_uri_parse(const char *str, struct http_uri *uri) {
     if (uri->user && *ptr == ':') {
         start = ptr;
 
-        while (*ptr != '\0') {
-            if (*ptr == '@') {
+        for (;;) {
+            if (*ptr == '@' || *ptr == '\0') {
                 toklen = (size_t)(ptr - start - 1);
-                if (toklen > 0) {
-                    uri->password = http_uri_decode_component(start + 1,
-                                                              toklen);
-                    if (!uri->password)
-                        goto error;
+                if (toklen == 0) {
+                    http_set_error("empty password");
+                    goto error;
                 }
+
+                uri->password = http_uri_decode_component(start + 1, toklen);
+                if (!uri->password)
+                    goto error;
+
                 break;
             } else if (*ptr == '/') {
                 /* End of authority, no password found */
@@ -185,8 +184,8 @@ http_uri_parse(const char *str, struct http_uri *uri) {
 
     /* Host */
     start = ptr;
-    while (*ptr != '\0') {
-        if (*ptr == '/' || *ptr == ':') {
+    for (;;) {
+        if (*ptr == '/' || *ptr == ':' || *ptr == '\0') {
             toklen = (size_t)(ptr - start);
             if (toklen == 0) {
                 http_set_error("empty host");
@@ -196,17 +195,11 @@ http_uri_parse(const char *str, struct http_uri *uri) {
             uri->host = http_uri_decode_component(start, toklen);
             if (!uri->host)
                 goto error;
+
             break;
         }
 
         ptr++;
-    }
-
-    if (!uri->host) {
-        toklen = (size_t)(ptr - start);
-        uri->host = http_uri_decode_component(start, toklen);
-        if (!uri->host)
-            goto error;
     }
 
     /* Port (optional) */
@@ -243,8 +236,8 @@ path:
     if (*ptr == '/') {
         start = ptr;
 
-        while (*ptr != '\0') {
-            if (*ptr == '?') {
+        for (;;) {
+            if (*ptr == '?' || *ptr == '\0') {
                 toklen = (size_t)(ptr - start);
                 uri->path = http_uri_decode_component(start, toklen);
                 if (!uri->path)
@@ -254,13 +247,6 @@ path:
             }
 
             ptr++;
-        }
-
-        if (!uri->path) {
-            toklen = (size_t)(ptr - start);
-            uri->path = http_uri_decode_component(start, toklen);
-            if (!uri->path)
-                goto error;
         }
     } else {
         uri->path = http_strdup("/");
