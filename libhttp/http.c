@@ -804,8 +804,10 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
 
         parser->state = HTTP_PARSER_BODY;
 
-        if (http_msg_process_headers(parser) == -1)
-            return -1;
+        if (!parser->skip_header_processing) {
+            if (http_msg_process_headers(parser) == -1)
+                return -1;
+        }
         return 1;
     }
 

@@ -41,6 +41,7 @@ main(int argc, char **argv) {
         bf_buffer_add_string(buf, str_);                     \
                                                              \
         http_parser_init(&parser, HTTP_MSG_REQUEST, &cfg);   \
+        parser.skip_header_processing = true;                \
         msg = &parser.msg;                                   \
                                                              \
         ret = http_msg_parse(buf, &parser);                  \

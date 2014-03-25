@@ -137,6 +137,8 @@ struct http_parser {
 
     const struct http_server *server;
     const struct http_cfg *cfg;
+
+    bool skip_header_processing;
 };
 
 int http_parser_init(struct http_parser *, enum http_msg_type,
