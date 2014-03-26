@@ -33,8 +33,8 @@ main(int argc, char **argv) {
 
     cfg.u.server.max_request_uri_length = 8;
 
-    cfg.max_content_length = 32;
-    cfg.max_chunk_length = 8;
+    cfg.max_content_length = 48;
+    cfg.max_chunk_length = 16;
 
     cfg.max_header_name_length = 8;
     cfg.max_header_value_length = 20;
@@ -228,6 +228,70 @@ main(int argc, char **argv) {
     /* --------------------------------------------------------------------
      *  Chunks
      * -------------------------------------------------------------------- */
+#define HTTPT_BEGIN_CHUNKS(str_)                                    \
+    do {                                                            \
+        HTTPT_BEGIN("PUT / HTTP/1.1\r\nHost: localhost\r\n"         \
+                    "Transfer-Encoding: chunked\r\n\r\n"            \
+                    str_);                                          \
+                                                                    \
+        if (parser.status_code > 0) {                               \
+            HTTPT_DIE("%s:%d: invalid message: error %d (%s)",      \
+                      __FILE__, __LINE__, parser.status_code,       \
+                      parser.errmsg);                               \
+        }                                                           \
+    } while (0)
+
+    HTTPT_BEGIN_CHUNKS("0\r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 0);
+    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "");
+    HTTPT_END();
+
+    HTTPT_BEGIN_CHUNKS("3\r\nfoo\r\n6\r\nfoobar\r\n0\r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 9);
+    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "foofoobar");
+    HTTPT_END();
+
+    HTTPT_BEGIN_CHUNKS("a\r\nfoobar baz\r\n0\r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 10);
+    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "foobar baz");
+    HTTPT_END();
+
+    HTTPT_BEGIN_CHUNKS("1;a=1\r\na\r\n1 ; a=1\r\nb\r\n0\r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 2);
+    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "ab");
+    HTTPT_END();
+
+    HTTPT_BEGIN_CHUNKS("1;a=\"foo\"\r\na\r\n1 ; a=\"\"\r\nb\r\n0\r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 2);
+    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "ab");
+    HTTPT_END();
+
+#undef HTTPT_BEGIN_CHUNKS
+
+#define HTTPT_INVALID_CHUNKS(str_, status_code_)                       \
+    do {                                                               \
+        HTTPT_BEGIN("PUT / HTTP/1.1\r\nHost: localhost\r\n"            \
+                    "Transfer-Encoding: chunked\r\n\r\n"               \
+                    str_);                                             \
+                                                                       \
+        if (parser.status_code != status_code_) {                      \
+            HTTPT_DIE("%s:%d: wrong http error %d (%s) instead of %d", \
+                      __FILE__, __LINE__, parser.status_code,          \
+                      parser.errmsg, status_code_);                    \
+        }                                                              \
+                                                                       \
+        HTTPT_END();                                                   \
+    } while (0)
+
+    /* Invalid length */
+    HTTPT_INVALID_CHUNKS("\r\nfoo\r\n0\r\n\r\n", HTTP_BAD_REQUEST);
+    HTTPT_INVALID_CHUNKS("g3\r\nfoo\r\n0\r\n\r\n", HTTP_BAD_REQUEST);
+
+    /* Chunk too large */
+    HTTPT_INVALID_CHUNKS("11\r\nabcdefghijklmnopq\r\n0\r\n\r\n",
+                         HTTP_REQUEST_ENTITY_TOO_LARGE);
+
+#undef HTTPT_INVALID_CHUNKS
 
 #undef HTTPT_BEGIN
 #undef HTTPT_END
