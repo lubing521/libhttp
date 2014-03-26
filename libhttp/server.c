@@ -204,7 +204,7 @@ http_server_add_route(struct http_server *server,
 }
 
 void
-http_server_error(struct http_server *server, const char *fmt, ...) {
+http_server_error(const struct http_server *server, const char *fmt, ...) {
     char buf[HTTP_ERROR_BUFSZ];
     va_list ap;
 
@@ -219,7 +219,7 @@ http_server_error(struct http_server *server, const char *fmt, ...) {
 }
 
 void
-http_server_trace(struct http_server *server, const char *fmt, ...) {
+http_server_trace(const struct http_server *server, const char *fmt, ...) {
     char buf[HTTP_ERROR_BUFSZ];
     va_list ap;
 

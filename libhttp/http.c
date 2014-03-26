@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <errno.h>
 #include <string.h>
 
 #include "http.h"
@@ -38,6 +39,8 @@ struct http_cfg http_default_cfg = {
 
     .max_header_name_length = 128,
     .max_header_value_length = 4096,
+
+    .max_chunk_length = 1000 * 1000,
 
     .connection_timeout = 10000,
 };
@@ -637,11 +640,16 @@ http_msg_parse(struct bf_buffer *buf, struct http_parser *parser) {
             break;
 
         case HTTP_PARSER_HEADER:
+        case HTTP_PARSER_TRAILER:
             ret = http_msg_parse_headers(buf, parser);
             break;
 
         case HTTP_PARSER_BODY:
-            ret = http_msg_parse_body(buf, parser);
+            if (parser->msg.is_body_chunked) {
+                ret = http_msg_parse_chunk(buf, parser);
+            } else {
+                ret = http_msg_parse_body(buf, parser);
+            }
             break;
 
         case HTTP_PARSER_ERROR:
@@ -878,12 +886,17 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
     if (len >= 2 && ptr[0] == '\r' && ptr[1] == '\n') {
         bf_buffer_skip(buf, 2);
 
-        parser->state = HTTP_PARSER_BODY;
-
         if (!parser->skip_header_processing) {
             if (http_msg_process_headers(parser) == -1)
                 return -1;
         }
+
+        if (parser->state == HTTP_PARSER_HEADER) {
+            parser->state = HTTP_PARSER_BODY;
+        } else if (parser->state == HTTP_PARSER_TRAILER) {
+            parser->state = HTTP_PARSER_DONE;
+        }
+
         return 1;
     }
 
@@ -1021,6 +1034,129 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
     return 1;
 }
 
+int
+http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
+    const struct http_cfg *cfg;
+    struct http_msg *msg;
+    const char *ptr, *start, *end;
+    size_t len, toklen, chunk_length;
+    unsigned long long ullval;
+    char token[21];
+    char *body;
+    size_t body_sz;
+
+    cfg = parser->cfg;
+    msg = &parser->msg;
+
+    ptr = bf_buffer_data(buf);
+    len = bf_buffer_length(buf);
+
+    HTTP_SKIP_LWS();
+
+    /* Chunk length */
+    start = ptr;
+    end = NULL;
+
+    while (len > 0) {
+        if ((*ptr >= '0' && *ptr <= '9')
+         || (*ptr >= 'a' && *ptr <= 'f') || (*ptr >= 'A' && *ptr <= 'F')) {
+            ptr++;
+            len--;
+        } else if (*ptr == ' ' || *ptr == '\t' || *ptr == ';' || *ptr == '\r') {
+            end = ptr;
+            break;
+        } else {
+            HTTP_ERROR(HTTP_BAD_REQUEST,
+                       "invalid character \\%hhu in chunk length",
+                       (unsigned char)*ptr);
+        }
+    }
+
+    if (!end)
+        return 0;
+
+    toklen = (size_t)(end - start);
+    if (toklen == 0)
+        HTTP_ERROR(HTTP_BAD_REQUEST, "empty chunk length");
+    if (toklen > 20)
+        HTTP_ERROR(HTTP_BAD_REQUEST, "chunk length too large");
+
+    memcpy(token, start, toklen);
+    token[toklen] = '\0';
+
+    errno = 0;
+    ullval = strtoull(token, NULL, 16);
+    if (errno) {
+        HTTP_ERROR(HTTP_BAD_REQUEST, "invalid chunk length");
+    } else if (ullval > SIZE_MAX) {
+        HTTP_ERROR(HTTP_BAD_REQUEST, "chunk length too large");
+    }
+
+    chunk_length = ullval;
+    if (chunk_length > cfg->max_chunk_length)
+        HTTP_ERROR(HTTP_REQUEST_ENTITY_TOO_LARGE, "chunk length too large");
+
+    /* We do not currently handle any chunk extension */
+    start = NULL;
+
+    while (len > 0) {
+        if (len < 2)
+            return 0;
+
+        if (ptr[0] == '\r' && ptr[1] == '\n') {
+            ptr += 2;
+            len -= 2;
+
+            start = ptr;
+            break;
+        }
+
+        ptr++;
+        len--;
+    }
+
+    if (!start)
+        return 0;
+
+    /* Chunk data */
+    if (chunk_length > 0) {
+        if (len < chunk_length + 2)
+            return 0;
+
+        if (msg->body_sz == 0) {
+            body_sz = chunk_length;
+            body = http_malloc(body_sz);
+        } else {
+            body_sz = msg->body_sz + chunk_length;
+            body = http_realloc(msg->body, body_sz);
+        }
+
+        if (!body)
+            return -1;
+
+        memcpy(body + msg->body_sz, start, chunk_length);
+
+        msg->body = body;
+        msg->body_sz = body_sz;
+
+        ptr += chunk_length;
+        len -= chunk_length;
+
+        /* Final CRLF */
+        ptr += 2;
+        len -= 2;
+    }
+
+    bf_buffer_skip(buf, (size_t)(ptr - bf_buffer_data(buf)));
+
+    if (chunk_length == 0) {
+        /* This was the last chunk */
+        parser->state = HTTP_PARSER_TRAILER;
+    }
+
+    return 1;
+}
+
 static int
 http_msg_process_headers(struct http_parser *parser) {
     struct http_msg *msg;
@@ -1047,15 +1183,14 @@ http_msg_process_headers(struct http_parser *parser) {
                            "listening on", host);
             }
         } else if (HTTP_HEADER_IS("Connection")) {
-            char token[32];
             const char *list, *end;
+            char token[32];
 
             list = header->value;
             for (;;) {
                 int ret;
 
-                ret = http_token_list_get_next_token(list,
-                                                     token, sizeof(token),
+                ret = http_token_list_get_next_token(list, token, sizeof(token),
                                                      &end);
                 if (ret == -1)
                     goto ignore_header;
@@ -1076,6 +1211,40 @@ http_msg_process_headers(struct http_parser *parser) {
             if (http_parse_size(header->value, &msg->content_length) == -1) {
                 HTTP_ERROR(HTTP_BAD_REQUEST, "cannot parse Content-Length: %s",
                            http_get_error());
+            }
+        } else if (HTTP_HEADER_IS("Transfer-Encoding")) {
+            const char *list, *end;
+            char token[32];
+            bool is_chunked;
+
+            is_chunked = false;
+
+            list = header->value;
+            for (;;) {
+                int ret;
+
+                ret = http_token_list_get_next_token(list, token, sizeof(token),
+                                                     &end);
+                if (ret == -1)
+                    goto ignore_header;
+                if (ret == 0)
+                    break;
+
+                if (strcasecmp(token, "chunked") == 0) {
+                    if (is_chunked) {
+                        HTTP_ERROR(HTTP_BAD_REQUEST,
+                                   "duplicate 'chunked' token in "
+                                   "Transfer-Encoding header");
+                    }
+
+                    is_chunked = true;
+                    msg->is_body_chunked = true;
+                } else {
+                    HTTP_ERROR(HTTP_NOT_IMPLEMENTED,
+                               "unknown transfer encoding '%s'", token);
+                }
+
+                list = end;
             }
         }
 

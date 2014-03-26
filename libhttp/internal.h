@@ -101,11 +101,12 @@ struct http_msg {
 
     char *body;
     size_t body_sz;
+    bool is_body_chunked;
 
     bool has_content_length;
     size_t content_length;
 
-    int connection_options;
+    uint32_t connection_options;
 };
 
 void http_msg_init(struct http_msg *);
@@ -123,6 +124,7 @@ enum http_parser_state {
     HTTP_PARSER_START,
     HTTP_PARSER_HEADER,
     HTTP_PARSER_BODY,
+    HTTP_PARSER_TRAILER,
 
     HTTP_PARSER_ERROR,
     HTTP_PARSER_DONE,
@@ -156,6 +158,7 @@ int http_msg_parse_request_line(struct bf_buffer *, struct http_parser *);
 int http_msg_parse_status_line(struct bf_buffer *, struct http_parser *);
 int http_msg_parse_headers(struct bf_buffer *, struct http_parser *);
 int http_msg_parse_body(struct bf_buffer *, struct http_parser *);
+int http_msg_parse_chunk(struct bf_buffer *, struct http_parser *);
 
 /* Connections */
 struct http_connection {
@@ -268,9 +271,9 @@ struct http_server {
     struct http_route_base *route_base;
 };
 
-void http_server_error(struct http_server *, const char *, ...)
+void http_server_error(const struct http_server *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
-void http_server_trace(struct http_server *, const char *, ...)
+void http_server_trace(const struct http_server *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
 bool http_server_does_listen_on(const struct http_server *,

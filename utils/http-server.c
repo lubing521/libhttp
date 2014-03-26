@@ -221,11 +221,12 @@ https_foo_get(struct http_connection *connection, const struct http_msg *msg,
 static void
 https_foo_post(struct http_connection *connection, const struct http_msg *msg,
                void *arg) {
-    const char *body;
+    char body[128];
     size_t body_length;
     char body_length_str[20];
 
-    body = "POST /foo\n";
+    snprintf(body, sizeof(body), "%zu bytes received\n",
+             http_msg_body_length(msg));
     body_length = strlen(body);
     snprintf(body_length_str, sizeof(body_length_str), "%zu", body_length);
 
