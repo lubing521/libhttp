@@ -27,31 +27,37 @@ main(int argc, char **argv) {
     struct http_cfg cfg;
     struct http_parser parser;
     struct http_msg *msg;
+    bool skip_header_processing;
 
     cfg = http_default_cfg;
+
     cfg.u.server.max_request_uri_length = 8;
+
+    cfg.max_content_length = 32;
+    cfg.max_chunk_length = 8;
+
     cfg.max_header_name_length = 8;
     cfg.max_header_value_length = 20;
 
-#define HTTPT_BEGIN(str_)                                    \
-    do {                                                     \
-        int ret;                                             \
-                                                             \
-        buf = bf_buffer_new(0);                              \
-        bf_buffer_add_string(buf, str_);                     \
-                                                             \
-        http_parser_init(&parser, HTTP_MSG_REQUEST, &cfg);   \
-        parser.skip_header_processing = true;                \
-        msg = &parser.msg;                                   \
-                                                             \
-        ret = http_msg_parse(buf, &parser);                  \
-        if (ret == -1) {                                     \
-            HTTPT_DIE("%s:%d: cannot parse message: %s",     \
-                      __FILE__, __LINE__, http_get_error()); \
-        } else if (ret == 0) {                               \
-            HTTPT_DIE("%s:%d: truncated message",            \
-                      __FILE__, __LINE__);                   \
-        }                                                    \
+#define HTTPT_BEGIN(str_)                                       \
+    do {                                                        \
+        int ret;                                                \
+                                                                \
+        buf = bf_buffer_new(0);                                 \
+        bf_buffer_add_string(buf, str_);                        \
+                                                                \
+        http_parser_init(&parser, HTTP_MSG_REQUEST, &cfg);      \
+        parser.skip_header_processing = skip_header_processing; \
+        msg = &parser.msg;                                      \
+                                                                \
+        ret = http_msg_parse(buf, &parser);                     \
+        if (ret == -1) {                                        \
+            HTTPT_DIE("%s:%d: cannot parse message: %s",        \
+                      __FILE__, __LINE__, http_get_error());    \
+        } else if (ret == 0) {                                  \
+            HTTPT_DIE("%s:%d: truncated message",               \
+                      __FILE__, __LINE__);                      \
+        }                                                       \
     } while (0)
 
 
@@ -80,9 +86,11 @@ main(int argc, char **argv) {
         HTTPT_END();                                           \
     } while (0)
 
+    skip_header_processing = true;
+
     HTTPT_REQUEST_LINE("GET / HTTP/1.0\r\n\r\n",
                        HTTP_GET, "/", HTTP_1_0);
-    HTTPT_REQUEST_LINE("POST / HTTP/1.1\r\n\r\n",
+    HTTPT_REQUEST_LINE("POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n",
                        HTTP_POST, "/", HTTP_1_1);
     HTTPT_REQUEST_LINE("GET   /  HTTP/1.0\r\n\r\n",
                        HTTP_GET, "/", HTTP_1_0);
@@ -135,6 +143,8 @@ main(int argc, char **argv) {
         HTTPT_IS_EQUAL_STRING(msg->headers[idx_].value, value_); \
     } while (0)
 
+    skip_header_processing = true;
+
     HTTPT_BEGIN_HEADERS("Foo: bar\r\n\r\n");
     HTTPT_IS_EQUAL_UINT(msg->nb_headers, 1);
     HTTPT_IS_EQUAL_HEADER(0, "Foo", "bar");
@@ -179,6 +189,45 @@ main(int argc, char **argv) {
 #undef HTTPT_BEGIN_HEADERS
 #undef HTTPT_INVALID_HEADER
 #undef HTTPT_IS_EQUAL_HEADER
+
+    /* --------------------------------------------------------------------
+     *  Body
+     * -------------------------------------------------------------------- */
+#define HTTPT_BEGIN_BODY(str_)                                      \
+    do {                                                            \
+        HTTPT_BEGIN("PUT / HTTP/1.1\r\nHost: localhost\r\n" str_);  \
+                                                                    \
+        if (parser.status_code > 0) {                               \
+            HTTPT_DIE("%s:%d: invalid message (error %d)",          \
+                      __FILE__, __LINE__, parser.status_code);      \
+        }                                                           \
+    } while (0)
+
+    cfg.max_header_name_length = 1024;
+    cfg.max_header_value_length = 1024;
+
+    skip_header_processing = false;
+
+    HTTPT_BEGIN_BODY("Content-Length: 0\r\n\r\n");
+    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 0);
+    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "");
+    HTTPT_END();
+
+    HTTPT_BEGIN_BODY("Content-Length: 3\r\n\r\nfoo");
+    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 3);
+    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "foo");
+    HTTPT_END();
+
+    HTTPT_BEGIN_BODY("Content-Length: 8\r\n\r\nfoo\r\nbar");
+    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 8);
+    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "foo\r\nbar");
+    HTTPT_END();
+
+#undef HTTPT_BEGIN_BODY
+
+    /* --------------------------------------------------------------------
+     *  Chunks
+     * -------------------------------------------------------------------- */
 
 #undef HTTPT_BEGIN
 #undef HTTPT_END

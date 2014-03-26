@@ -102,7 +102,7 @@ struct http_msg {
     size_t headers_sz;
 
     char *body;
-    size_t body_sz;
+    size_t body_length;
     bool is_body_chunked;
 
     bool has_content_length;

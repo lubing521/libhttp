@@ -47,6 +47,7 @@ struct http_cfg http_default_cfg = {
 };
 
 static int http_msg_process_headers(struct http_parser *);
+static int http_msg_finalize_body(struct http_msg *msg);
 
 static bool http_is_token_char(unsigned char);
 
@@ -189,7 +190,7 @@ http_msg_body(const struct http_msg *msg) {
 
 size_t
 http_msg_body_length(const struct http_msg *msg) {
-    return msg->body_sz;
+    return msg->body_length;
 }
 
 const char *
@@ -667,6 +668,11 @@ http_msg_parse(struct bf_buffer *buf, struct http_parser *parser) {
     } while (parser->state != HTTP_PARSER_DONE
           && parser->state != HTTP_PARSER_ERROR);
 
+    if (parser->state == HTTP_PARSER_DONE) {
+        if (http_msg_finalize_body(&parser->msg) == -1)
+            return -1;
+    }
+
     return 1;
 }
 
@@ -1024,12 +1030,14 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
     if (len < msg->content_length)
         return 0;
 
-    msg->body_sz = msg->content_length;
-    msg->body = http_strndup(ptr, msg->body_sz);
-    if (!msg->body)
-        return -1;
+    if (msg->content_length > 0) {
+        msg->body_length = msg->content_length;
+        msg->body = http_strndup(ptr, msg->body_length);
+        if (!msg->body)
+            return -1;
 
-    bf_buffer_skip(buf, msg->content_length);
+        bf_buffer_skip(buf, msg->content_length);
+    }
 
     parser->state = HTTP_PARSER_DONE;
     return 1;
@@ -1044,7 +1052,7 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
     unsigned long long ullval;
     char token[21];
     char *body;
-    size_t body_sz;
+    size_t body_length;
 
     cfg = parser->cfg;
     msg = &parser->msg;
@@ -1124,21 +1132,21 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
         if (len < chunk_length + 2)
             return 0;
 
-        if (msg->body_sz == 0) {
-            body_sz = chunk_length;
-            body = http_malloc(body_sz);
+        if (msg->body_length == 0) {
+            body_length = chunk_length;
+            body = http_malloc(body_length);
         } else {
-            body_sz = msg->body_sz + chunk_length;
-            body = http_realloc(msg->body, body_sz);
+            body_length = msg->body_length + chunk_length;
+            body = http_realloc(msg->body, body_length);
         }
 
         if (!body)
             return -1;
 
-        memcpy(body + msg->body_sz, start, chunk_length);
+        memcpy(body + msg->body_length, start, chunk_length);
 
         msg->body = body;
-        msg->body_sz = body_sz;
+        msg->body_length = body_length;
 
         ptr += chunk_length;
         len -= chunk_length;
@@ -1316,6 +1324,37 @@ ignore_header:
 #undef HTTP_SKIP_CRLF
 #undef HTTP_SKIP_MULTIPLE_CRLF
 #undef HTTP_SKIP_LWS
+
+static int
+http_msg_finalize_body(struct http_msg *msg) {
+    char *body;
+    size_t sz;
+
+    /* We add a null byte after the body.
+     *
+     * - If the body is empty, body_length is still 0.
+     * - If the body contains text data, it's now a nice null terminated
+     *   string.
+     * - If the body contains binary data, body_length is still 0, no harm
+     *   done.
+     */
+
+    if (msg->body == NULL) {
+        sz = 1;
+        body = http_malloc(sz);
+    } else {
+        sz = msg->body_length + 1;
+        body = http_realloc(msg->body, sz);
+    }
+
+    if (!body)
+        return -1;
+
+    body[sz - 1] = '\0';
+    msg->body = body;
+
+    return 0;
+}
 
 static bool
 http_is_token_char(unsigned char c) {
