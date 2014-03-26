@@ -436,65 +436,140 @@ http_request_process_uri(struct http_msg *msg) {
 int
 http_token_list_get_next_token(const char *list, char *token, size_t sz,
                                const char **pend) {
-    const char *ptr, *start, *end;
+    const char *ptr, *token_start, *token_end, *end;
     size_t toklen;
 
-    start = NULL;
-    end = NULL;
-
-    /* Note that we need to read after the end of the token, until we find
-     * either a comma or the end of the string. This way, we can detect
-     * the case where two tokens are separated by spaces (or tabs) only, which
-     * is invalid (the separator is the comma, and space are invalid
-     * characters inside tokens). */
-
     ptr = list;
-    while (*ptr != '\0') {
-        if (start && end) {
-            /* After token */
-            if (*ptr == ' ' || *ptr == '\t') {
-                ptr++;
-            } else if (*ptr == ',') {
-                break;
-            } else {
-                http_set_error("missing separator");
-                return -1;
-            }
-        } else if (start) {
-            /* In token */
-            if (*ptr == ' ' || *ptr == '\t' || *ptr == ',') {
-                end = ptr;
-            } else if (!http_is_token_char((unsigned char)*ptr)) {
-                http_set_error("invalid character in token");
-                return -1;
-            } else {
-                ptr++;
-            }
+
+#define HTTP_SKIP_SP_HT()                 \
+    while (*ptr == ' ' || *ptr == '\t') { \
+        ptr++;                            \
+    }
+
+    for (;;) {
+        if (*ptr == '\0') {
+            /* End of list */
+            return 0;
+        } else if (*ptr == ' ' || *ptr == '\t' || *ptr == ',') {
+            ptr++;
+        } else if (!http_is_token_char((unsigned char)*ptr)) {
+            http_set_error("invalid character \\%hhu in token list",
+                           (unsigned char)*ptr);
+            return -1;
         } else {
-            /* Out of token */
-            if (*ptr == ' ' || *ptr == '\t' || *ptr == ',') {
-                ptr++;
-            } else if (!http_is_token_char((unsigned char)*ptr)) {
-                http_set_error("invalid character in token list");
-                return -1;
-            } else {
-                start = ptr;
-                ptr++;
-            }
+            /* Start of token */
+            token_start = ptr;
+            break;
         }
     }
 
-    if (!start)
-        return 0;
+    /* Token */
+    for (;;) {
+        if (*ptr == '\0' || *ptr == ' ' || *ptr == '\t' || *ptr == ','
+         || *ptr == ';') {
+            /* End of token */
+            token_end = ptr;
+            break;
+        } else if (!http_is_token_char((unsigned char)*ptr)) {
+            http_set_error("invalid character \\%hhu in token",
+                           (unsigned char)*ptr);
+            return -1;
+        } else {
+            ptr++;
+        }
+    }
 
-    if (!end)
+    for (;;) {
+        HTTP_SKIP_SP_HT();
+
+        if (*ptr == ';') {
+            /* Token parameter */
+
+            ptr++; /* skip ';' */
+            HTTP_SKIP_SP_HT();
+
+            /* Name */
+            for (;;) {
+                if (*ptr == '\0') {
+                    http_set_error("missing parameter value");
+                    return -1;
+                } else if (*ptr == ' ' || *ptr == '\t' || *ptr == '=') {
+                    /* End of parameter name */
+                    break;
+                } else if (!http_is_token_char((unsigned char)*ptr)) {
+                    http_set_error("invalid character \\%hhu in parameter name",
+                                   (unsigned char)*ptr);
+                    return -1;
+                } else {
+                    ptr++;
+                }
+            }
+
+            HTTP_SKIP_SP_HT();
+
+            if (*ptr != '=') {
+                http_set_error("missing parameter value");
+                return -1;
+            }
+
+            ptr++; /* skip '=' */
+
+            /* Value */
+            if (*ptr == '"') {
+                /* Quoted string */
+                ptr++; /* skip '"' */
+
+                for (;;) {
+                    if (*ptr == '\0') {
+                        http_set_error("truncated quoted string");
+                    } else if (*ptr == '"' && *(ptr - 1) != '\\') {
+                        /* End of parameter value */
+                        break;
+                    } else {
+                        ptr++;
+                    }
+                }
+
+                ptr++; /* skip '"' */
+            } else {
+                /* Token */
+                for (;;) {
+                    if (*ptr == '\0' || *ptr == ' ' || *ptr == '\t'
+                     || *ptr == ',' || *ptr == ';') {
+                        /* End of parameter value */
+                        break;
+                    } else if (!http_is_token_char((unsigned char)*ptr)) {
+                        http_set_error("invalid character \\%hhu in parameter "
+                                       "value", (unsigned char)*ptr);
+                        return -1;
+                    } else {
+                        ptr++;
+                    }
+                }
+            }
+        } else {
+            break;
+        }
+    }
+
+    HTTP_SKIP_SP_HT();
+
+    if (*ptr == ',') {
+        ptr++; /* skip ',' */
         end = ptr;
+    } else if (*ptr == '\0') {
+        end = ptr;
+    } else {
+        http_set_error("missing separator");
+        return -1;
+    }
+#undef HTTP_SKIP_SP_HT
 
-    toklen = (size_t)(end - start);
+    toklen = (size_t)(token_end - token_start);
     if (toklen > sz)
         toklen = sz - 1;
 
-    memcpy(token, start, sz);
+    memcpy(token, token_start, toklen);
     token[toklen] = '\0';
 
     *pend = end;
