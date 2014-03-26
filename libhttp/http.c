@@ -40,6 +40,7 @@ struct http_cfg http_default_cfg = {
     .max_header_name_length = 128,
     .max_header_value_length = 4096,
 
+    .max_content_length = 16 * 1000 * 1000,
     .max_chunk_length = 1000 * 1000,
 
     .connection_timeout = 10000,
@@ -1159,9 +1160,11 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
 
 static int
 http_msg_process_headers(struct http_parser *parser) {
+    const struct http_cfg *cfg;
     struct http_msg *msg;
     const char *host;
 
+    cfg = parser->cfg;
     msg = &parser->msg;
 
     host = NULL;
@@ -1211,6 +1214,11 @@ http_msg_process_headers(struct http_parser *parser) {
             if (http_parse_size(header->value, &msg->content_length) == -1) {
                 HTTP_ERROR(HTTP_BAD_REQUEST, "cannot parse Content-Length: %s",
                            http_get_error());
+            }
+
+            if (msg->content_length > cfg->max_content_length) {
+                HTTP_ERROR(HTTP_REQUEST_ENTITY_TOO_LARGE,
+                           "Content-Length header too large");
             }
         } else if (HTTP_HEADER_IS("Transfer-Encoding")) {
             const char *list, *end;
