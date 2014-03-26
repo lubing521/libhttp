@@ -326,6 +326,7 @@ http_named_parameter_free(struct http_named_parameter *parameter) {
 
 void
 http_request_free(struct http_request *request) {
+    http_free(request->uri_string);
     http_uri_delete(request->uri);
 
     for (size_t i = 0; i < request->nb_named_parameters; i++)
@@ -946,6 +947,8 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
             } else {
                 toklen = (size_t)(ptr - start);
                 if (toklen > cfg->max_header_value_length) {
+                    http_header_free(&header);
+
                     HTTP_ERROR(HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE,
                                "header value too long");
                 }

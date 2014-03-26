@@ -236,48 +236,58 @@ http_server_trace(struct http_server *server, const char *fmt, ...) {
 bool
 http_server_does_listen_on(const struct http_server *server,
                            const char *host, const char *port) {
+    struct http_listener *listener;
     struct ht_table_iterator *it;
+    bool found;
 
     it = ht_table_iterate(server->listeners);
-    if (it) {
-        struct http_listener *listener;
-
-        while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1) {
-            if ((strcmp(host, listener->host) == 0
-                 || strcmp(host, listener->numeric_host) == 0)
-                && (!port || (strcmp(port, listener->port) == 0))) {
-                return true;
-            }
-        }
-
-        ht_table_iterator_delete(it);
+    if (!it) {
+        http_server_error(server, "cannot iterate on listeners: %s",
+                          ht_get_error());
+        return false;
     }
 
-    return false;
+    found = false;
+    while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1) {
+        if ((strcmp(host, listener->host) == 0
+             || strcmp(host, listener->numeric_host) == 0)
+            && (!port || (strcmp(port, listener->port) == 0))) {
+            found = true;
+            break;
+        }
+    }
+
+    ht_table_iterator_delete(it);
+    return found;
 }
 
 bool
 http_server_does_listen_on_host_string(const struct http_server *server,
                                        const char *host_string) {
+    struct http_listener *listener;
     struct ht_table_iterator *it;
+    bool found;
 
     it = ht_table_iterate(server->listeners);
-    if (it) {
-        struct http_listener *listener;
-
-        while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1) {
-            if (strcmp(host_string, listener->host) == 0
-             || strcmp(host_string, listener->numeric_host) == 0
-             || strcmp(host_string, listener->host_port) == 0
-             || strcmp(host_string, listener->numeric_host_port) == 0) {
-                return true;
-            }
-        }
-
-        ht_table_iterator_delete(it);
+    if (!it) {
+        http_server_error(server, "cannot iterate on listeners: %s",
+                          ht_get_error());
+        return false;
     }
 
-    return false;
+    found = false;
+    while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1) {
+        if (strcmp(host_string, listener->host) == 0
+         || strcmp(host_string, listener->numeric_host) == 0
+         || strcmp(host_string, listener->host_port) == 0
+         || strcmp(host_string, listener->numeric_host_port) == 0) {
+            found = true;
+            break;
+        }
+    }
+
+    ht_table_iterator_delete(it);
+    return found;
 }
 
 static void
