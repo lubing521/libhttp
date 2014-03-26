@@ -75,6 +75,8 @@ struct http_request {
 
     struct http_named_parameter *named_parameters;
     size_t nb_named_parameters;
+
+    bool expects_100_continue;
 };
 
 void http_request_free(struct http_request *);
@@ -138,6 +140,7 @@ struct http_parser {
     char errmsg[HTTP_ERROR_BUFSZ];
 
     const struct http_server *server;
+    struct http_connection *connection;
     const struct http_cfg *cfg;
 
     bool skip_header_processing;

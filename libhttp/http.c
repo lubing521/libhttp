@@ -1254,6 +1254,30 @@ http_msg_process_headers(struct http_parser *parser) {
 
                 list = end;
             }
+        } else if (HTTP_HEADER_IS("Expect")) {
+            const char *list, *end;
+            char token[32];
+
+            list = header->value;
+            for (;;) {
+                int ret;
+
+                ret = http_token_list_get_next_token(list, token, sizeof(token),
+                                                     &end);
+                if (ret == -1)
+                    goto ignore_header;
+                if (ret == 0)
+                    break;
+
+                if (strcasecmp(token, "100-continue") == 0) {
+                    msg->u.request.expects_100_continue = true;
+                } else {
+                    HTTP_ERROR(HTTP_EXPECTATION_FAILED,
+                               "unknown expectation token");
+                }
+
+                list = end;
+            }
         }
 
 ignore_header:
@@ -1269,6 +1293,19 @@ ignore_header:
          * message which lacks a Host header field. */
         if (msg->version == HTTP_1_1 && !host)
             HTTP_ERROR(HTTP_BAD_REQUEST, "missing Host header");
+
+        /* RFC 2616 8.2.3: The origin server MUST NOT wait for the request
+         * body before sending the 100 (Continue) response. */
+        if (msg->u.request.expects_100_continue) {
+            if (http_connection_write_response(parser->connection,
+                                               HTTP_CONTINUE, NULL) == -1) {
+                return -1;
+            }
+
+            if (http_connection_write_empty_body(parser->connection) == -1) {
+                return -1;
+            }
+        }
     }
 
     return 1;

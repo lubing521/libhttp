@@ -78,6 +78,7 @@ http_connection_setup(struct http_server *server, int sock) {
     }
 
     connection->parser.server = server;
+    connection->parser.connection = connection;
 
     connection->http_version = HTTP_1_1;
 
@@ -301,6 +302,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             }
 
             connection->parser.server = connection->server;
+            connection->parser.connection = connection;
         }
     }
 
