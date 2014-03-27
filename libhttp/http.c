@@ -74,6 +74,7 @@ http_method_to_string(enum http_method method) {
         [HTTP_HEAD]    = "HEAD",
         [HTTP_PUT]     = "PUT",
         [HTTP_DELETE]  = "DELETE",
+        [HTTP_OPTIONS] = "OPTIONS",
     };
     static size_t nb_strings;
 
@@ -752,6 +753,8 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
                 msg->u.request.method = HTTP_PUT;
             } else if (memcmp(start, "DELETE", toklen) == 0) {
                 msg->u.request.method = HTTP_DELETE;
+            } else if (memcmp(start, "OPTIONS", toklen) == 0) {
+                msg->u.request.method = HTTP_OPTIONS;
             } else {
                 HTTP_ERROR(HTTP_NOT_IMPLEMENTED, "unsupported method");
             }

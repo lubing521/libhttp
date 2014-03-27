@@ -25,6 +25,8 @@
 
 static void http_connection_process_msg(struct http_connection *,
                                         struct http_msg *);
+static int http_connection_write_options_response(struct http_connection *,
+                                                  struct http_msg *);
 
 struct http_connection *
 http_connection_setup(struct http_server *server, int sock) {
@@ -160,37 +162,37 @@ http_connection_http_error(struct http_connection *connection,
                            enum http_status_code status_code) {
     const char *reason_phrase;
     char body[1024];
-    char length_str[32];
-    size_t body_length;
+    size_t body_len;
 
     reason_phrase = http_status_code_to_reason_phrase(status_code);
     snprintf(body, sizeof(body), "<h1>%d %s</h1>\n",
              status_code, reason_phrase);
-    body_length = strlen(body);
-
-    snprintf(length_str, sizeof(length_str), "%zu", body_length);
+    body_len = strlen(body);
 
     if (http_connection_write_response(connection,
                                        status_code, reason_phrase) == -1) {
-        http_connection_error(connection, "%s", strerror(errno));
-        http_connection_close(connection);
-        return -1;
+        goto error;
     }
 
     if (http_connection_write_header(connection,
                                      "Content-Type", "text/html") == -1) {
-        return -1;
+        goto error;
     }
 
-    if (http_connection_write_header(connection,
-                                     "Content-Length", length_str) == -1) {
-        return -1;
+    if (http_connection_write_header_size(connection,
+                                          "Content-Length", body_len) == -1) {
+        goto error;
     }
 
-    if (http_connection_write_body(connection, body, body_length) == -1)
-        return -1;
+    if (http_connection_write_body(connection, body, body_len) == -1)
+        goto error;
 
     return 0;
+
+error:
+    http_connection_error(connection, "%s", http_get_error());
+    http_connection_close(connection);
+    return -1;
 }
 
 void
@@ -452,22 +454,24 @@ http_connection_process_msg(struct http_connection *connection,
     const struct http_route *route;
     bool do_shutdown;
     enum http_route_match_result match_result;
+    enum http_method method;
 
     assert(msg->type == HTTP_MSG_REQUEST);
 
     route_base = connection->server->route_base;
+
+    method = msg->u.request.method;
 
     /* Version */
     connection->http_version = msg->version;
 
     /* URI */
     if (strcmp(msg->u.request.uri_string, "*") == 0) {
-        /* '*' is used for requests that do not apply to a particular
-         * resource such as OPTIONS, but we do not currently support any of
-         * them. */
-        http_connection_trace(connection, "invalid uri: '*'");
-        http_connection_http_error(connection, HTTP_BAD_REQUEST);
-        goto end;
+        if (method != HTTP_OPTIONS) {
+            http_connection_trace(connection, "invalid uri: '*'");
+            http_connection_http_error(connection, HTTP_BAD_REQUEST);
+            goto end;
+        }
     } else {
         /* Absolute URI or absolute path */
         msg->u.request.uri = http_uri_new(msg->u.request.uri_string);
@@ -494,13 +498,24 @@ http_connection_process_msg(struct http_connection *connection,
         }
     }
 
+    /* We handle OPTIONS requests ourselves */
+    if (method == HTTP_OPTIONS) {
+        if (http_connection_write_options_response(connection, msg) == -1)
+            goto end;
+
+        goto end;
+    }
+
     /* Find a route matching the URI of the message and call its handler. */
     if (http_route_base_find_route(route_base,
-                                   msg->u.request.method,
-                                   msg->u.request.uri->path,
+                                   method, msg->u.request.uri->path,
                                    &route, &match_result,
                                    &msg->u.request.named_parameters,
                                    &msg->u.request.nb_named_parameters) == -1) {
+        http_connection_error(connection,
+                              "cannot find route for request '%s %s': %s",
+                              http_method_to_string(method),
+                              msg->u.request.uri->path, http_get_error());
         http_connection_http_error(connection, HTTP_INTERNAL_SERVER_ERROR);
         goto end;
     }
@@ -542,4 +557,60 @@ end:
                                   http_get_error());
         }
     }
+}
+
+static int
+http_connection_write_options_response(struct http_connection *connection,
+                                       struct http_msg *msg) {
+    if (strcmp(msg->u.request.uri_string, "*") == 0) {
+        const char *methods;
+
+        methods = "GET, POST, HEAD, PUT, DELETE, OPTIONS";
+
+        if (http_connection_write_response(connection, HTTP_OK, NULL) == -1)
+            goto error;
+        if (http_connection_write_header(connection, "Allow", methods) == -1)
+            goto error;
+    } else {
+        enum http_method methods[HTTP_METHOD_MAX];
+        struct http_route_base *route_base;
+        struct http_uri *uri;
+        size_t nb_methods;
+
+        route_base = connection->server->route_base;
+        uri = msg->u.request.uri;
+
+        if (http_route_base_find_path_methods(route_base, uri->path,
+                                              methods, &nb_methods) == -1) {
+            goto error;
+        }
+
+        if (nb_methods == 0) {
+            http_connection_http_error(connection, HTTP_NOT_FOUND);
+            return 0;
+        }
+
+        if (http_connection_write_response(connection, HTTP_OK, NULL) == -1)
+            goto error;
+
+        for (size_t i = 0; i < nb_methods; i++) {
+            enum http_method method;
+            const char *method_string;
+
+            method = methods[i];
+            method_string = http_method_to_string(method);
+
+            if (http_connection_write_header(connection, "Allow",
+                                             method_string) == -1) {
+                goto error;
+            }
+        }
+    }
+
+    return 0;
+
+error:
+    http_connection_error(connection, "%s", http_get_error());
+    http_connection_close(connection);
+    return -1;
 }

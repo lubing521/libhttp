@@ -53,6 +53,9 @@ enum http_method {
     HTTP_HEAD,
     HTTP_PUT,
     HTTP_DELETE,
+    HTTP_OPTIONS,
+
+    HTTP_METHOD_MAX
 };
 
 const char *http_method_to_string(enum http_method);

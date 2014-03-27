@@ -20,9 +20,9 @@
 #include "http.h"
 #include "internal.h"
 
+static bool http_route_matches_path(const struct http_route *, char **, size_t);
 static bool http_route_matches_request(const struct http_route *,
-                                       enum http_method,
-                                       const char **, size_t,
+                                       enum http_method, char **, size_t,
                                        enum http_route_match_result *);
 static int http_route_cmp(const void *, const void *);
 
@@ -279,9 +279,9 @@ http_route_base_find_route(struct http_route_base *base,
 
     for (size_t i = 0; i < base->nb_routes; i++) {
         enum http_route_match_result result;
+
         if (http_route_matches_request(base->routes[i], method,
-                                       (const char **)path_components,
-                                       nb_path_components,
+                                       path_components, nb_path_components,
                                        &result)) {
             route = base->routes[i];
             match_result = HTTP_ROUTE_MATCH_OK;
@@ -352,21 +352,38 @@ http_route_base_find_route(struct http_route_base *base,
     return 0;
 }
 
-static bool
-http_route_matches_request(const struct http_route *route,
-                           enum http_method method,
-                           const char **path_components,
-                           size_t nb_path_components,
-                           enum http_route_match_result *match_result) {
-    if (route->nb_components == 0 && nb_path_components == 0) {
-        *match_result = HTTP_ROUTE_MATCH_OK;
-        goto end;
+int
+http_route_base_find_path_methods(struct http_route_base *base,
+                                  const char *path,
+                                  enum http_method methods[static HTTP_METHOD_MAX],
+                                  size_t *p_nb_methods) {
+    char **path_components;
+    size_t nb_path_components;
+    size_t nb_methods;
+
+    if (http_path_parse(path, &path_components, &nb_path_components) == -1)
+        return -1;
+
+    nb_methods = 0;
+    for (size_t i = 0; i < base->nb_routes; i++) {
+        if (http_route_matches_path(base->routes[i], path_components,
+                                    nb_path_components)) {
+            methods[nb_methods++] = base->routes[i]->method;
+        }
     }
 
-    if (nb_path_components != route->nb_components) {
-        *match_result = HTTP_ROUTE_MATCH_PATH_NOT_FOUND;
+    *p_nb_methods = nb_methods;
+    return 0;
+}
+
+static bool
+http_route_matches_path(const struct http_route *route,
+                        char **path_components, size_t nb_path_components) {
+    if (route->nb_components == 0 && nb_path_components == 0)
+        return true;
+
+    if (nb_path_components != route->nb_components)
         return false;
-    }
 
     for (size_t i = 0; i < nb_path_components; i++) {
         struct http_route_component *route_component;
@@ -377,10 +394,8 @@ http_route_matches_request(const struct http_route *route,
 
         switch (route_component->type) {
         case HTTP_ROUTE_COMPONENT_STRING:
-            if (strcmp(route_component->value, path_component) != 0) {
-                *match_result = HTTP_ROUTE_MATCH_PATH_NOT_FOUND;
+            if (strcmp(route_component->value, path_component) != 0)
                 return false;
-            }
             break;
 
         case HTTP_ROUTE_COMPONENT_WILDCARD:
@@ -389,7 +404,20 @@ http_route_matches_request(const struct http_route *route,
         }
     }
 
-end:
+    return true;
+}
+
+static bool
+http_route_matches_request(const struct http_route *route,
+                           enum http_method method,
+                           char **path_components, size_t nb_path_components,
+                           enum http_route_match_result *match_result) {
+    if (!http_route_matches_path(route,
+                                 path_components, nb_path_components)) {
+        *match_result = HTTP_ROUTE_MATCH_PATH_NOT_FOUND;
+        return false;
+    }
+
     if (route->method == method) {
         *match_result = HTTP_ROUTE_MATCH_OK;
         return true;

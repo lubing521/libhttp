@@ -264,6 +264,10 @@ int http_route_base_find_route(struct http_route_base *,
                                enum http_route_match_result *,
                                struct http_named_parameter **,
                                size_t *);
+int http_route_base_find_path_methods(struct http_route_base *,
+                                      const char *,
+                                      enum http_method [static HTTP_METHOD_MAX],
+                                      size_t *);
 
 /* Servers */
 struct http_server {
