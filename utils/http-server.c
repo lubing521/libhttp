@@ -205,50 +205,44 @@ static void
 https_foo_get(struct http_connection *connection, const struct http_msg *msg,
               void *arg) {
     const char *body;
-    size_t body_length;
-    char body_length_str[20];
+    size_t body_len;
 
     body = "GET /foo\n";
-    body_length = strlen(body);
-    snprintf(body_length_str, sizeof(body_length_str), "%zu", body_length);
+    body_len = strlen(body);
 
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_header(connection, "Content-Length", body_length_str);
-    http_connection_write_body(connection, body, body_length);
+    http_connection_write_header_size(connection, "Content-Length", body_len);
+    http_connection_write_body(connection, body, body_len);
 }
 
 static void
 https_foo_post(struct http_connection *connection, const struct http_msg *msg,
                void *arg) {
     char body[128];
-    size_t body_length;
-    char body_length_str[20];
+    size_t body_len;
 
     snprintf(body, sizeof(body), "%zu bytes received\n",
              http_msg_body_length(msg));
-    body_length = strlen(body);
-    snprintf(body_length_str, sizeof(body_length_str), "%zu", body_length);
+    body_len = strlen(body);
 
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_header(connection, "Content-Length", body_length_str);
-    http_connection_write_body(connection, body, body_length);
+    http_connection_write_header_size(connection, "Content-Length", body_len);
+    http_connection_write_body(connection, body, body_len);
 }
 
 static void
 https_foo_bar_get(struct http_connection *connection,
                   const struct http_msg *msg, void *arg) {
     const char *body;
-    size_t body_length;
-    char body_length_str[20];
+    size_t body_len;
 
     body = "GET /foo/bar\n";
-    body_length = strlen(body);
-    snprintf(body_length_str, sizeof(body_length_str), "%zu", body_length);
+    body_len = strlen(body);
 
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_header(connection, "Content-Length", body_length_str);
-    http_connection_write_body(connection, body, body_length);
+    http_connection_write_header_size(connection, "Content-Length", body_len);
+    http_connection_write_body(connection, body, body_len);
 }

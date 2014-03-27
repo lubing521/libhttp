@@ -409,6 +409,17 @@ http_connection_write_header(struct http_connection *connection,
 }
 
 int
+http_connection_write_header_size(struct http_connection *connection,
+                                  const char *name, size_t value) {
+    if (http_connection_printf(connection, "%s: %zu\r\n",
+                               name, value) == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int
 http_connection_write_body(struct http_connection *connection,
                            const char *buf, size_t sz) {
     if (http_connection_write(connection, "\r\n", 2) == -1)
