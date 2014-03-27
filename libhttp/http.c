@@ -965,6 +965,8 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
                 HTTP_SKIP_LWS();
                 continue;
             } else {
+                char *value;
+
                 toklen = (size_t)(ptr - start);
                 if (toklen > cfg->max_header_value_length) {
                     http_header_free(&header);
@@ -973,10 +975,17 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
                                "header value too long");
                 }
 
-                header.value = http_decode_header_value(start, toklen);
-                if (!header.value)
+                value = http_decode_header_value(start, toklen);
+                if (!value)
                     return -1;
 
+                header.value = http_iconv(value, "ISO-8859-1", "UTF-8");
+                if (!header.value) {
+                    http_free(value);
+                    return -1;
+                }
+
+                http_free(value);
                 found = true;
                 break;
             }
