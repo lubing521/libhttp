@@ -396,15 +396,21 @@ http_connection_write_response(struct http_connection *connection,
 int
 http_connection_write_header(struct http_connection *connection,
                              const char *name, const char *value) {
-    if (http_connection_printf(connection, "%s: ", name) == -1)
-        return -1;
+    char *encoded_value;
 
-    if (http_connection_write(connection, value, strlen(value)) == -1)
+    encoded_value = http_iconv(value, "UTF-8", "ISO-8859-1");
+    if (!encoded_value) {
+        /* TODO MIME encoding required */
         return -1;
+    }
 
-    if (http_connection_write(connection, "\r\n", 2) == -1)
+    if (http_connection_printf(connection, "%s: %s\r\n",
+                               name, encoded_value) == -1) {
+        http_free(encoded_value);
         return -1;
+    }
 
+    http_free(encoded_value);
     return 0;
 }
 

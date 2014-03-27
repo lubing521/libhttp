@@ -19,6 +19,8 @@
 
 #include <stdlib.h>
 
+#include <iconv.h>
+
 #include <buffer.h>
 #include <hashtable.h>
 
@@ -44,6 +46,8 @@ char *http_strdup(const char *);
 char *http_strndup(const char *, size_t);
 
 int http_parse_size(const char *, size_t *);
+
+char *http_iconv(const char *, const char *, const char *);
 
 #ifndef NDEBUG
 const char *http_fmt_data(const char *, size_t);

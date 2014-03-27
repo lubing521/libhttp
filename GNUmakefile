@@ -20,6 +20,11 @@ ifeq ($(platform), Linux)
 	CFLAGS+= -DHTTP_PLATFORM_LINUX
 	CFLAGS+= -D_POSIX_C_SOURCE=200809L -D_BSD_SOURCE
 endif
+ifeq ($(platform), FreeBSD)
+	CFLAGS+= -DHTTP_PLATFORM_FREEBSD
+	CFLAGS+= -I/usr/local/include
+	LDFLAGS+= -L/usr/local/lib
+endif
 
 # Debug
 debug=0

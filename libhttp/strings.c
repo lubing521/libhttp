@@ -57,6 +57,80 @@ http_parse_size(const char *str, size_t *pval) {
     return 0;
 }
 
+char *
+http_iconv(const char *str, const char *from, const char *to) {
+    const char *input;
+    char *output;
+    size_t ilen, olen, str_length;
+    iconv_t conv;
+
+    conv = iconv_open(to, from);
+    if (conv == (iconv_t)-1) {
+        http_set_error("cannot create iconv conversion descriptor "
+                       "from %s to %s: %s",
+                       from, to, strerror(errno));
+        return NULL;
+    }
+
+    str_length = strlen(str);
+
+    olen = str_length;
+    output = http_malloc(olen + 1);
+    if (!output) {
+        iconv_close(conv);
+        return NULL;
+    }
+
+    for (;;) {
+        size_t ret;
+
+        char *tmp;
+        size_t tmp_len;
+
+        input = str;
+        ilen = str_length;
+
+        tmp = output;
+        tmp_len = olen;
+
+#ifdef HTTP_PLATFORM_FREEBSD
+        ret = iconv(conv, (const char **)&input, &ilen, &tmp, &tmp_len);
+#else
+        ret = iconv(conv, (char **)&input, &ilen, &tmp, &tmp_len);
+#endif
+
+        if (ret == (size_t)-1) {
+            if (errno == E2BIG) {
+                char *noutput;
+
+                olen *= 2;
+                noutput = http_realloc(output, olen + 1);
+                if (!noutput) {
+                    http_free(output);
+                    iconv_close(conv);
+                    return NULL;
+                }
+
+                output = noutput;
+                continue;
+            } else {
+                http_set_error("cannot convert string from %s to %s: %s",
+                               from, to, strerror(errno));
+                printf("%s\n", http_get_error());
+                http_free(output);
+                iconv_close(conv);
+                return NULL;
+            }
+        }
+
+        *tmp = '\0';
+        break;
+    }
+
+    iconv_close(conv);
+    return output;
+}
+
 #ifndef NDEBUG
 const char *
 http_fmt_data(const char *buf, size_t sz) {
