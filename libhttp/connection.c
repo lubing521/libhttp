@@ -305,8 +305,13 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
              * was not entirely read). */
 
             if (connection->current_msg
-             && !http_parser_is_msg_bufferized(parser, msg)) {
+             && !http_parser_is_msg_bufferized(parser, msg)
+             && msg->body_length > 0) {
                 http_connection_call_msg_handler(connection, msg);
+
+                http_free(msg->body);
+                msg->body = NULL;
+                msg->body_length = 0;
             }
 
             break;
