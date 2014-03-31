@@ -23,8 +23,11 @@
 #include "http.h"
 #include "internal.h"
 
-static void http_connection_process_msg(struct http_connection *,
-                                        struct http_msg *);
+static void http_connection_preprocess_request(struct http_connection *,
+                                               struct http_msg *);
+static void http_connection_call_msg_handler(struct http_connection *,
+                                             struct http_msg *);
+static void http_connection_on_msg_processed(struct http_connection *);
 static int http_connection_write_options_response(struct http_connection *,
                                                   struct http_msg *);
 
@@ -281,8 +284,33 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             return;
         }
 
-        if (ret == 0)
+        if (http_parser_are_headers_read(parser) && !parser->msg_preprocessed) {
+            http_connection_preprocess_request(connection, msg);
+            parser->msg_preprocessed = true;
+
+            if (!connection->current_msg) {
+                /* The request was fully processed */
+                break;
+            }
+        }
+
+        if (ret == 0) {
+            /* The message was not entirely read */
+
+            /* If we are not bufferizing the whole message, we can call the
+             * message handler right now.
+             *
+             * Of course we do not call the handler if nothing was read since
+             * the last time (it can happen with chunked coding when a chunk
+             * was not entirely read). */
+
+            if (connection->current_msg
+             && !http_parser_is_msg_bufferized(parser, msg)) {
+                http_connection_call_msg_handler(connection, msg);
+            }
+
             break;
+        }
 
         if (parser->state == HTTP_PARSER_ERROR) {
             http_connection_error(connection, "cannot parse request: %s",
@@ -291,20 +319,18 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             http_connection_shutdown(connection);
             return;
         } else if (parser->state == HTTP_PARSER_DONE) {
+            msg->is_complete = true;
+
             if (cfg->request_hook)
                 cfg->request_hook(connection, msg, cfg->hook_arg);
 
-            http_connection_process_msg(connection, msg);
-
-            if (http_parser_reset(parser, HTTP_MSG_REQUEST, cfg) == -1) {
-                http_connection_error(connection, "cannot reset parser: %s",
-                                      http_get_error());
-                http_connection_close(connection);
-                return;
+            http_connection_call_msg_handler(connection, msg);
+            if (!connection->current_msg) {
+                /* The request was fully processed */
+                break;
             }
 
-            connection->parser.server = connection->server;
-            connection->parser.connection = connection;
+            http_connection_on_msg_processed(connection);
         }
     }
 
@@ -448,52 +474,53 @@ http_connection_write_empty_body(struct http_connection *connection) {
 }
 
 static void
-http_connection_process_msg(struct http_connection *connection,
-                            struct http_msg *msg) {
-    struct http_route_base *route_base;
-    const struct http_route *route;
-    bool do_shutdown;
-    enum http_route_match_result match_result;
+http_connection_preprocess_request(struct http_connection *connection,
+                                   struct http_msg *msg) {
+    const char *uri_string;
+    struct http_uri *uri;
     enum http_method method;
 
     assert(msg->type == HTTP_MSG_REQUEST);
+    assert(!connection->current_msg);
 
-    route_base = connection->server->route_base;
+    connection->current_msg = msg;
 
     method = msg->u.request.method;
+    uri_string = msg->u.request.uri_string;
 
     /* Version */
     connection->http_version = msg->version;
 
     /* URI */
-    if (strcmp(msg->u.request.uri_string, "*") == 0) {
+    if (strcmp(uri_string, "*") == 0) {
         if (method != HTTP_OPTIONS) {
             http_connection_trace(connection, "invalid uri: '*'");
             http_connection_http_error(connection, HTTP_BAD_REQUEST);
-            goto end;
+            goto msg_processed;
         }
     } else {
         /* Absolute URI or absolute path */
-        msg->u.request.uri = http_uri_new(msg->u.request.uri_string);
-        if (!msg->u.request.uri) {
+        uri = http_uri_new(uri_string);
+        if (!uri) {
             http_connection_trace(connection, "cannot parse uri: %s",
                                   http_get_error());
             http_connection_http_error(connection, HTTP_BAD_REQUEST);
-            goto end;
+            goto msg_processed;
         }
+
+        msg->u.request.uri = uri;
 
         /* We have to accept absolute URIs (RFC 2616 5.1.2) but since we do
          * not act as a proxy, we only accept them when the host and port of
          * URI is an address we are listening on. */
-        if (msg->u.request.uri->host) {
+        if (uri->host) {
             if (!http_server_does_listen_on(connection->server,
-                                            msg->u.request.uri->host,
-                                            msg->u.request.uri->port)) {
+                                            uri->host, uri->port)) {
                 http_connection_trace(connection,
                                       "absolute uri is not associated with an "
                                       "address we are listening on");
                 http_connection_http_error(connection, HTTP_BAD_REQUEST);
-                goto end;
+                goto msg_processed;
             }
         }
     }
@@ -501,10 +528,30 @@ http_connection_process_msg(struct http_connection *connection,
     /* We handle OPTIONS requests ourselves */
     if (method == HTTP_OPTIONS) {
         if (http_connection_write_options_response(connection, msg) == -1)
-            goto end;
+            goto msg_processed;
 
-        goto end;
+        goto msg_processed;
     }
+
+    return;
+
+msg_processed:
+    http_connection_on_msg_processed(connection);
+}
+
+static void
+http_connection_call_msg_handler(struct http_connection *connection,
+                                 struct http_msg *msg) {
+    struct http_route_base *route_base;
+    const struct http_route *route;
+    enum http_route_match_result match_result;
+    enum http_method method;
+
+    assert(msg->type == HTTP_MSG_REQUEST);
+    assert(connection->current_msg);
+
+    route_base = connection->server->route_base;
+    method = connection->current_msg->u.request.method;
 
     /* Find a route matching the URI of the message and call its handler. */
     if (http_route_base_find_route(route_base,
@@ -517,7 +564,8 @@ http_connection_process_msg(struct http_connection *connection,
                               http_method_to_string(method),
                               msg->u.request.uri->path, http_get_error());
         http_connection_http_error(connection, HTTP_INTERNAL_SERVER_ERROR);
-        goto end;
+        http_connection_on_msg_processed(connection);
+        return;
     }
 
     if (!route) {
@@ -536,12 +584,24 @@ http_connection_process_msg(struct http_connection *connection,
             break;
         }
 
-        goto end;
+        http_connection_on_msg_processed(connection);
+        return;
     }
 
     route->msg_handler(connection, msg, route_base->msg_handler_arg);
+}
 
-end:
+static void
+http_connection_on_msg_processed(struct http_connection *connection) {
+    const struct http_cfg *cfg;
+    struct http_msg *msg;
+    bool do_shutdown;
+
+    assert(connection->current_msg);
+
+    cfg = &connection->server->cfg;
+    msg = connection->current_msg;
+
     if (msg->version == HTTP_1_0) {
         do_shutdown = !(msg->connection_options & HTTP_CONNECTION_KEEP_ALIVE);
     } else if (msg->version == HTTP_1_1) {
@@ -557,6 +617,18 @@ end:
                                   http_get_error());
         }
     }
+
+    if (http_parser_reset(&connection->parser, HTTP_MSG_REQUEST, cfg) == -1) {
+        http_connection_error(connection, "cannot reset parser: %s",
+                              http_get_error());
+        http_connection_close(connection);
+        return;
+    }
+
+    connection->parser.server = connection->server;
+    connection->parser.connection = connection;
+
+    connection->current_msg = NULL;
 }
 
 static int

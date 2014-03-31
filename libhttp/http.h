@@ -123,6 +123,12 @@ enum http_connection_option {
     HTTP_CONNECTION_CLOSE      = 0x02,
 };
 
+enum http_bufferization {
+    HTTP_BUFFERIZE_AUTO,
+    HTTP_BUFFERIZE_ALWAYS,
+    HTTP_BUFFERIZE_NEVER,
+};
+
 struct http_msg;
 struct http_header;
 struct http_connection;
@@ -135,6 +141,8 @@ const char *http_request_uri(const struct http_msg *);
 size_t http_msg_nb_headers(const struct http_msg *);
 const struct http_header *http_msg_header(const struct http_msg *, size_t);
 const char *http_msg_get_header(const struct http_msg *, const char *);
+
+bool http_msg_is_complete(const struct http_msg *);
 
 const char *http_msg_body(const struct http_msg *);
 size_t http_msg_body_length(const struct http_msg *);
@@ -172,6 +180,8 @@ struct http_cfg {
 
     size_t max_content_length;
     size_t max_chunk_length;
+
+    enum http_bufferization bufferization;
 
     uint64_t connection_timeout; /* milliseconds */
 };

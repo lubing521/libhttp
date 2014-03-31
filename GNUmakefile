@@ -115,6 +115,7 @@ uninstall:
 	$(RM) $(addprefix $(incdir)/,$(libhttp_PUBINC))
 
 tags:
+	$(RM) -f .tags
 	ctags -o .tags -a $(wildcard libhttp/*.[hc])
 
 .PHONY: all clean coverage install uninstall tags

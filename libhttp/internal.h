@@ -105,8 +105,11 @@ struct http_msg {
     size_t nb_headers;
     size_t headers_sz;
 
+    bool is_complete;
+
     char *body;
     size_t body_length;
+    size_t total_body_length;
     bool is_body_chunked;
 
     bool has_content_length;
@@ -148,6 +151,8 @@ struct http_parser {
     const struct http_cfg *cfg;
 
     bool skip_header_processing;
+
+    bool msg_preprocessed;
 };
 
 int http_parser_init(struct http_parser *, enum http_msg_type,
@@ -155,6 +160,9 @@ int http_parser_init(struct http_parser *, enum http_msg_type,
 void http_parser_free(struct http_parser *);
 int http_parser_reset(struct http_parser *, enum http_msg_type,
                       const struct http_cfg *);
+
+bool http_parser_are_headers_read(struct http_parser *);
+bool http_parser_is_msg_bufferized(struct http_parser *, struct http_msg *);
 
 void http_parser_fail(struct http_parser *, enum http_status_code,
                       const char *, ...)
@@ -189,6 +197,8 @@ struct http_connection {
     enum http_version http_version;
 
     uint64_t last_activity;
+
+    struct http_msg *current_msg;
 };
 
 struct http_connection *http_connection_setup(struct http_server *, int);

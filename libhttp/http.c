@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <string.h>
 
@@ -42,6 +43,8 @@ struct http_cfg http_default_cfg = {
 
     .max_content_length = 16 * 1000 * 1000,
     .max_chunk_length = 1000 * 1000,
+
+    .bufferization = HTTP_BUFFERIZE_AUTO,
 
     .connection_timeout = 10000,
 };
@@ -182,6 +185,11 @@ http_msg_get_header(const struct http_msg *msg, const char *name) {
     }
 
     return NULL;
+}
+
+bool
+http_msg_is_complete(const struct http_msg *msg) {
+    return msg->is_complete;
 }
 
 const char *
@@ -612,6 +620,35 @@ http_parser_reset(struct http_parser *parser, enum http_msg_type msg_type,
     return http_parser_init(parser, msg_type, cfg);
 }
 
+bool
+http_parser_are_headers_read(struct http_parser *parser) {
+    switch (parser->state) {
+    case HTTP_PARSER_START:
+    case HTTP_PARSER_HEADER:
+    case HTTP_PARSER_ERROR:
+        return false;
+
+    case HTTP_PARSER_BODY:
+    case HTTP_PARSER_TRAILER:
+    case HTTP_PARSER_DONE:
+        return true;
+    }
+}
+
+bool
+http_parser_is_msg_bufferized(struct http_parser *parser,
+                              struct http_msg *msg) {
+    enum http_bufferization bufferization;
+
+    bufferization = parser->cfg->bufferization;
+
+    if (!http_parser_are_headers_read(parser))
+        return false;
+
+    return bufferization == HTTP_BUFFERIZE_ALWAYS
+        || (bufferization == HTTP_BUFFERIZE_AUTO && msg->is_body_chunked);
+}
+
 void
 http_parser_fail(struct http_parser *parser, enum http_status_code status_code,
                  const char *fmt, ...) {
@@ -1039,11 +1076,21 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
     if (!msg->has_content_length)
         HTTP_ERROR(HTTP_LENGTH_REQUIRED, "missing Content-Length header");
 
-    if (len < msg->content_length)
-        return 0;
+    if (http_parser_is_msg_bufferized(parser, msg)) {
+        if (len < msg->content_length)
+            return 0;
+
+        msg->body_length = msg->content_length;
+        msg->total_body_length = msg->content_length;
+    } else {
+        http_free(msg->body);
+
+        if (len < msg->content_length)
+            msg->body_length = len;
+        msg->total_body_length += msg->body_length;
+    }
 
     if (msg->content_length > 0) {
-        msg->body_length = msg->content_length;
         msg->body = http_strndup(ptr, msg->body_length);
         if (!msg->body)
             return -1;
@@ -1051,7 +1098,9 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
         bf_buffer_skip(buf, msg->content_length);
     }
 
-    parser->state = HTTP_PARSER_DONE;
+    if (msg->total_body_length == msg->content_length)
+        parser->state = HTTP_PARSER_DONE;
+
     return 1;
 }
 
@@ -1062,7 +1111,7 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
     const char *ptr, *start, *end;
     size_t len, toklen, chunk_length;
     unsigned long long ullval;
-    char token[21];
+    char token[21]; /* SIZE_MAX can be up to 20 digits long */
     char *body;
     size_t body_length;
 
@@ -1079,8 +1128,7 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
     end = NULL;
 
     while (len > 0) {
-        if ((*ptr >= '0' && *ptr <= '9')
-         || (*ptr >= 'a' && *ptr <= 'f') || (*ptr >= 'A' && *ptr <= 'F')) {
+        if (isxdigit((unsigned char)*ptr)) {
             ptr++;
             len--;
         } else if (*ptr == ' ' || *ptr == '\t' || *ptr == ';' || *ptr == '\r') {
@@ -1141,8 +1189,16 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
 
     /* Chunk data */
     if (chunk_length > 0) {
+        bool bufferized;
+
         if (len < chunk_length + 2)
             return 0;
+
+        bufferized = http_parser_is_msg_bufferized(parser, msg);
+        if (!bufferized && msg->body_length > 0) {
+            http_free(msg->body);
+            msg->body_length = 0;
+        }
 
         if (msg->body_length == 0) {
             body_length = chunk_length;
@@ -1160,12 +1216,9 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
         msg->body = body;
         msg->body_length = body_length;
 
-        ptr += chunk_length;
-        len -= chunk_length;
-
-        /* Final CRLF */
-        ptr += 2;
-        len -= 2;
+        /* Skip the content and the final CRLF */
+        ptr += chunk_length + 2;
+        len -= chunk_length - 2;
     }
 
     bf_buffer_skip(buf, (size_t)(ptr - bf_buffer_data(buf)));

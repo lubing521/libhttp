@@ -59,14 +59,25 @@ static void https_foo_bar_get(struct http_connection *,
 
 int
 main(int argc, char **argv) {
+    enum http_bufferization bufferization;
     struct http_cfg cfg;
     int opt;
 
+    bufferization = HTTP_BUFFERIZE_AUTO;
+
     opterr = 0;
-    while ((opt = getopt(argc, argv, "h")) != -1) {
+    while ((opt = getopt(argc, argv, "bhu")) != -1) {
         switch (opt) {
+        case 'b':
+            bufferization = HTTP_BUFFERIZE_ALWAYS;
+            break;
+
         case 'h':
             https_usage(argv[0], 0);
+            break;
+
+        case 'u':
+            bufferization = HTTP_BUFFERIZE_NEVER;
             break;
 
         case '?':
@@ -79,6 +90,8 @@ main(int argc, char **argv) {
     cfg.error_hook = https_on_error;
     cfg.trace_hook = https_on_trace;
     cfg.request_hook = https_on_request;
+
+    cfg.bufferization = bufferization;
 
     https_initialize(&cfg);
 
@@ -93,10 +106,12 @@ main(int argc, char **argv) {
 
 static void
 https_usage(const char *argv0, int exit_code) {
-    printf("Usage: %s [-h]\n"
+    printf("Usage: %s [-bhu]\n"
             "\n"
             "Options:\n"
-            "  -h display help\n",
+            "  -b bufferize requests\n"
+            "  -h display help\n"
+            "  -u do not bufferize requests\n",
             argv0);
     exit(exit_code);
 }
@@ -219,17 +234,28 @@ https_foo_get(struct http_connection *connection, const struct http_msg *msg,
 static void
 https_foo_post(struct http_connection *connection, const struct http_msg *msg,
                void *arg) {
+    static size_t content_len = 0;
+
     char body[128];
     size_t body_len;
 
-    snprintf(body, sizeof(body), "%zu bytes received\n",
-             http_msg_body_length(msg));
+    content_len += http_msg_body_length(msg);
+
+    printf("%zu bytes received (total: %zu)\n",
+           http_msg_body_length(msg), content_len);
+
+    if (!http_msg_is_complete(msg))
+        return;
+
+    snprintf(body, sizeof(body), "%zu bytes received\n", content_len);
     body_len = strlen(body);
 
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
     http_connection_write_header_size(connection, "Content-Length", body_len);
     http_connection_write_body(connection, body, body_len);
+
+    content_len = 0;
 }
 
 static void

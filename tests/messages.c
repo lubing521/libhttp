@@ -39,6 +39,8 @@ main(int argc, char **argv) {
     cfg.max_header_name_length = 8;
     cfg.max_header_value_length = 20;
 
+    cfg.bufferization = HTTP_BUFFERIZE_ALWAYS;
+
 #define HTTPT_BEGIN(str_)                                       \
     do {                                                        \
         int ret;                                                \
