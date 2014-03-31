@@ -118,4 +118,7 @@ tags:
 	$(RM) -f .tags
 	ctags -o .tags -a $(wildcard libhttp/*.[hc])
 
-.PHONY: all clean coverage install uninstall tags
+test: $(tests_BIN)
+	$(foreach test,$(tests_BIN), $(shell ./$(test)))
+
+.PHONY: all clean coverage install uninstall tags test
