@@ -560,45 +560,56 @@ http_connection_call_msg_handler(struct http_connection *connection,
     assert(msg->type == HTTP_MSG_REQUEST);
     assert(connection->current_msg);
 
-    route_base = connection->server->route_base;
-    method = connection->current_msg->u.request.method;
+    if (!connection->current_msg_handler) {
+        struct http_named_parameter **p_named_parameters;
+        size_t *p_nb_named_parameters;
 
-    /* Find a route matching the URI of the message and call its handler. */
-    if (http_route_base_find_route(route_base,
-                                   method, msg->u.request.uri->path,
-                                   &route, &match_result,
-                                   &msg->u.request.named_parameters,
-                                   &msg->u.request.nb_named_parameters) == -1) {
-        http_connection_error(connection,
-                              "cannot find route for request '%s %s': %s",
-                              http_method_to_string(method),
-                              msg->u.request.uri->path, http_get_error());
-        http_connection_http_error(connection, HTTP_INTERNAL_SERVER_ERROR);
-        http_connection_on_msg_processed(connection);
-        return;
-    }
+        route_base = connection->server->route_base;
+        method = connection->current_msg->u.request.method;
 
-    if (!route) {
-        switch (match_result) {
-        case HTTP_ROUTE_MATCH_METHOD_NOT_FOUND:
-            http_connection_http_error(connection, HTTP_METHOD_NOT_ALLOWED);
-            break;
+        p_named_parameters = &msg->u.request.named_parameters;
+        p_nb_named_parameters = &msg->u.request.nb_named_parameters;
 
-        case HTTP_ROUTE_MATCH_PATH_NOT_FOUND:
-            http_connection_http_error(connection, HTTP_NOT_FOUND);
-            break;
-
-        case HTTP_ROUTE_MATCH_WRONG_PATH:
-        default:
-            http_connection_http_error(connection, HTTP_BAD_REQUEST);
-            break;
+        if (http_route_base_find_route(route_base,
+                                       method, msg->u.request.uri->path,
+                                       &route, &match_result,
+                                       p_named_parameters,
+                                       p_nb_named_parameters) == -1) {
+            http_connection_error(connection,
+                                  "cannot find route for request '%s %s': %s",
+                                  http_method_to_string(method),
+                                  msg->u.request.uri->path, http_get_error());
+            http_connection_http_error(connection, HTTP_INTERNAL_SERVER_ERROR);
+            http_connection_on_msg_processed(connection);
+            return;
         }
 
-        http_connection_on_msg_processed(connection);
-        return;
+        if (!route) {
+            switch (match_result) {
+            case HTTP_ROUTE_MATCH_METHOD_NOT_FOUND:
+                http_connection_http_error(connection, HTTP_METHOD_NOT_ALLOWED);
+                break;
+
+            case HTTP_ROUTE_MATCH_PATH_NOT_FOUND:
+                http_connection_http_error(connection, HTTP_NOT_FOUND);
+                break;
+
+            case HTTP_ROUTE_MATCH_WRONG_PATH:
+            default:
+                http_connection_http_error(connection, HTTP_BAD_REQUEST);
+                break;
+            }
+
+            http_connection_on_msg_processed(connection);
+            return;
+        }
+
+        connection->current_msg_handler = route->msg_handler;
+        connection->current_msg_handler_arg = route_base->msg_handler_arg;
     }
 
-    route->msg_handler(connection, msg, route_base->msg_handler_arg);
+    connection->current_msg_handler(connection, msg,
+                                    connection->current_msg_handler_arg);
 }
 
 static void
@@ -639,6 +650,8 @@ http_connection_on_msg_processed(struct http_connection *connection) {
     connection->parser.connection = connection;
 
     connection->current_msg = NULL;
+    connection->current_msg_handler = NULL;
+    connection->current_msg_handler_arg = NULL;
 }
 
 static int

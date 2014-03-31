@@ -200,6 +200,8 @@ struct http_connection {
     uint64_t last_activity;
 
     struct http_msg *current_msg;
+    http_msg_handler current_msg_handler;
+    void *current_msg_handler_arg;
 };
 
 struct http_connection *http_connection_setup(struct http_server *, int);
