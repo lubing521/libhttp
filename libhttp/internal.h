@@ -152,6 +152,7 @@ struct http_parser {
 
     bool skip_header_processing;
 
+    bool headers_processed;
     bool msg_preprocessed;
 };
 

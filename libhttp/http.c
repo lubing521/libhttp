@@ -933,9 +933,11 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
     if (len >= 2 && ptr[0] == '\r' && ptr[1] == '\n') {
         bf_buffer_skip(buf, 2);
 
-        if (!parser->skip_header_processing) {
+        if (!parser->headers_processed && !parser->skip_header_processing) {
             if (http_msg_process_headers(parser) == -1)
                 return -1;
+
+            parser->headers_processed = true;
         }
 
         if (parser->state == HTTP_PARSER_HEADER) {
