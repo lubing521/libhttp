@@ -19,6 +19,7 @@
 
 #include <stdbool.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <event.h>
 
@@ -38,6 +39,14 @@ struct http_memory_allocator {
 extern const struct http_memory_allocator *http_default_memory_allocator;
 
 void http_set_memory_allocator(const struct http_memory_allocator *allocator);
+
+/* Time */
+#define HTTP_RFC1123_DATE_BUFSZ 64
+
+void http_format_date(char [static HTTP_RFC1123_DATE_BUFSZ], size_t,
+                      const struct tm *);
+int http_format_timestamp(char [static HTTP_RFC1123_DATE_BUFSZ], size_t,
+                          time_t);
 
 /* Protocol */
 enum http_version {

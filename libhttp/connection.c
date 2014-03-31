@@ -28,6 +28,8 @@ static void http_connection_preprocess_request(struct http_connection *,
 static void http_connection_call_msg_handler(struct http_connection *,
                                              struct http_msg *);
 static void http_connection_on_msg_processed(struct http_connection *);
+
+static int http_connection_write_auto_headers(struct http_connection *);
 static int http_connection_write_options_response(struct http_connection *,
                                                   struct http_msg *);
 
@@ -461,6 +463,9 @@ http_connection_write_header_size(struct http_connection *connection,
 int
 http_connection_write_body(struct http_connection *connection,
                            const char *buf, size_t sz) {
+    if (http_connection_write_auto_headers(connection) == -1)
+        return -1;
+
     if (http_connection_write(connection, "\r\n", 2) == -1)
         return -1;
 
@@ -634,6 +639,25 @@ http_connection_on_msg_processed(struct http_connection *connection) {
     connection->parser.connection = connection;
 
     connection->current_msg = NULL;
+}
+
+static int
+http_connection_write_auto_headers(struct http_connection *connection) {
+    const struct http_cfg *cfg;
+    char date[HTTP_RFC1123_DATE_BUFSZ];
+
+    cfg = &connection->server->cfg;
+
+
+    if (http_format_timestamp(date, HTTP_RFC1123_DATE_BUFSZ,
+                              time(NULL)) == -1) {
+        return -1;
+    }
+
+    if (http_connection_write_header(connection, "Date", date) == -1)
+        return -1;
+
+    return 0;
 }
 
 static int
