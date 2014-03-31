@@ -243,7 +243,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
     } else {
         /* Hostname */
         for (;;) {
-            if (*ptr == '/' || *ptr == ':' || *ptr == '\0') {
+            if (*ptr == '/' || *ptr == ':' || *ptr == '#' || *ptr == '\0') {
                 toklen = (size_t)(ptr - start);
                 if (toklen == 0) {
                     http_set_error("empty host");
@@ -268,7 +268,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
         start = ptr;
 
         for (;;) {
-            if (*ptr == '/' || *ptr == '\0') {
+            if (*ptr == '/' || *ptr == '#' || *ptr == '\0') {
                 toklen = (size_t)(ptr - start);
                 if (toklen == 0) {
                     http_set_error("empty port");
@@ -296,7 +296,7 @@ path:
         start = ptr;
 
         for (;;) {
-            if (*ptr == '?' || *ptr == '\0') {
+            if (*ptr == '?' || *ptr == '#' || *ptr == '\0') {
                 toklen = (size_t)(ptr - start);
                 uri->path = http_uri_decode_component(start, toklen);
                 if (!uri->path)
@@ -319,7 +319,7 @@ path:
 
         start = ptr;
 
-        while (*ptr != '\0')
+        while (*ptr != '#' && *ptr != '\0')
             ptr++;
 
         toklen = (size_t)(ptr - start);

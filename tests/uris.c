@@ -105,6 +105,18 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_STRING(uri->path, "/");
     HTTPT_END();
 
+    HTTPT_BEGIN("http://example.com/#foo");
+    HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
+    HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_END();
+
+    HTTPT_BEGIN("http://example.com#foo");
+    HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
+    HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_END();
+
     HTTPT_BEGIN("http://example.com:8080/");
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
@@ -139,6 +151,13 @@ main(int argc, char **argv) {
     HTTPT_END();
 
     HTTPT_BEGIN("http://example.com/a/b/c?a=1&b=2");
+    HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
+    HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
+    HTTPT_IS_EQUAL_STRING(uri->path, "/a/b/c");
+    HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
+    HTTPT_END();
+
+    HTTPT_BEGIN("http://example.com/a/b/c?a=1&b=2#foo");
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
     HTTPT_IS_EQUAL_STRING(uri->path, "/a/b/c");
