@@ -334,6 +334,58 @@ error:
     return -1;
 }
 
+char *
+http_uri_decode_query_component(const char *str, size_t sz) {
+    const char *iptr;
+    char *component, *optr;
+    size_t str_length, ilen;
+
+    str_length = strlen(str);
+    component = http_malloc(str_length + 1);
+    if (!component)
+        return NULL;
+
+    iptr = str;
+    ilen = sz;
+
+    optr = component;
+
+    while (ilen > 0) {
+        if (*iptr == '%') {
+            int d1, d2;
+
+            if (ilen < 3) {
+                http_set_error("truncated escape sequence");
+                goto error;
+            }
+
+            if (http_read_hex_digit((unsigned char)iptr[1], &d1) == -1
+             || http_read_hex_digit((unsigned char)iptr[2], &d2) == -1) {
+                http_set_error("invalid escape sequence");
+                goto error;
+            }
+
+            *optr++ = (d1 << 4) | d2;
+            iptr += 3;
+            ilen -= 3;
+        } else if (*iptr == '+') {
+            *optr++ = ' ';
+            iptr++;
+            ilen--;
+        } else {
+            *optr++ = *iptr++;
+            ilen--;
+        }
+    }
+
+    *optr = '\0';
+    return component;
+
+error:
+    http_free(component);
+    return NULL;
+}
+
 static char *
 http_uri_decode_component(const char *str, size_t sz) {
     const char *iptr;

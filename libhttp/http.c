@@ -217,6 +217,31 @@ http_msg_get_named_parameter(const struct http_msg *msg, const char *name) {
 }
 
 const char *
+http_msg_get_query_parameter(const struct http_msg *msg, const char *name) {
+    /* The behaviour to adopt when two query parameters have the same name is
+     * not defined. Depending on the HTTP API, the value retained in this case
+     * can be:
+     *
+     * - The first value.
+     * - The second one.
+     * - A concatenation fo the first one, a comma, and the second one.
+     * - An array containing both values.
+     *
+     * We choose the first solution because it is the simpler. */
+
+    for (size_t i = 0; i < msg->u.request.nb_query_parameters; i++) {
+        struct http_query_parameter *parameter;
+
+        parameter = msg->u.request.query_parameters + i;
+
+        if (strcmp(parameter->name, name) == 0)
+            return parameter->value;
+    }
+
+    return NULL;
+}
+
+const char *
 http_header_name(const struct http_header *header) {
     return header->name;
 }
@@ -339,6 +364,138 @@ http_named_parameter_free(struct http_named_parameter *parameter) {
 }
 
 void
+http_query_parameter_free(struct http_query_parameter *parameter) {
+    if (!parameter)
+        return;
+
+    http_free(parameter->name);
+    http_free(parameter->value);
+
+    memset(parameter, 0, sizeof(struct http_query_parameter));
+}
+
+int
+http_query_parameters_parse(const char *query,
+                            struct http_query_parameter **pparameters,
+                            size_t *p_nb_parameters) {
+    struct http_query_parameter *parameters, *parameter;
+    size_t nb_parameters;
+    const char *ptr, *start;
+    size_t idx, toklen;
+
+    ptr = query;
+
+    /* Count the parameters */
+    nb_parameters = 0;
+    for (;;) {
+        if (*ptr == '&' || *ptr == ';' || *ptr == '\0') {
+            if (ptr > query)
+                nb_parameters++;
+
+            if (*ptr == '\0')
+                break;
+        }
+
+        ptr++;
+    }
+
+    if (nb_parameters == 0) {
+        *pparameters = NULL;
+        *p_nb_parameters = 0;
+        return 0;
+    }
+
+    /* Decode the parameters */
+    ptr = query;
+
+    parameters = http_calloc(nb_parameters,
+                             sizeof(struct http_query_parameter));
+    if (!parameters)
+        return -1;
+
+    idx = 0;
+    for (;;) {
+        if (idx >= nb_parameters) {
+            /* We did not correctly count the number of parameters */
+            http_set_error("error while parsing query");
+            goto error;
+        }
+
+        parameter = parameters + idx;
+
+        /* Key */
+        start = ptr;
+
+        for (;;) {
+            if (*ptr == '&' || *ptr == ';' || *ptr == '=' || *ptr == '\0') {
+                toklen = (size_t)(ptr - start);
+                if (toklen == 0) {
+                    http_set_error("empty query parameter name");
+                    goto error;
+                }
+
+                parameter->name = http_uri_decode_query_component(start,
+                                                                  toklen);
+                if (!parameter->name)
+                    goto error;
+
+                break;
+            }
+
+            ptr++;
+        }
+
+        if (*ptr == '\0') {
+            break;
+        } else if (*ptr == '&' || *ptr == ';') {
+            ptr++;
+            idx++;
+            continue;
+        }
+
+        /* Value (optional) */
+        ptr++; /* skip '=' */
+        start = ptr;
+
+        for (;;) {
+            if (*ptr == '&' || *ptr == ';' || *ptr == '\0') {
+                toklen = (size_t)(ptr - start);
+                if (toklen == 0) {
+                    http_set_error("empty query parameter value");
+                    goto error;
+                }
+
+                parameter->value = http_uri_decode_query_component(start,
+                                                                   toklen);
+                if (!parameter->value)
+                    goto error;
+
+                break;
+            }
+
+            ptr++;
+        }
+
+        if (*ptr == '\0') {
+            break;
+        } else {
+            ptr++;
+            idx++;
+        }
+    }
+
+    *pparameters = parameters;
+    *p_nb_parameters = nb_parameters;
+    return 0;
+
+error:
+    for (size_t i = 0; i < nb_parameters; i++)
+        http_query_parameter_free(parameters + i);
+    http_free(parameters);
+    return -1;
+}
+
+void
 http_request_free(struct http_request *request) {
     http_free(request->uri_string);
     http_uri_delete(request->uri);
@@ -346,6 +503,10 @@ http_request_free(struct http_request *request) {
     for (size_t i = 0; i < request->nb_named_parameters; i++)
         http_named_parameter_free(request->named_parameters + i);
     http_free(request->named_parameters);
+
+    for (size_t i = 0; i < request->nb_query_parameters; i++)
+        http_query_parameter_free(request->query_parameters + i);
+    http_free(request->query_parameters);
 }
 
 void

@@ -22,7 +22,12 @@
 int
 main(int argc, char **argv) {
     struct http_uri *uri;
+    struct http_query_parameter *parameters;
+    size_t nb_parameters;
 
+    /* --------------------------------------------------------------------
+     *  URI
+     * -------------------------------------------------------------------- */
 #define HTTPT_BEGIN(str_)                                    \
     do {                                                     \
         uri = http_uri_new(str_);                            \
@@ -200,6 +205,92 @@ main(int argc, char **argv) {
     HTTPT_INVALID_URI("http://example.co%g");
 
 #undef HTTPT_INVALID_URI
+
+#undef HTTPT_BEGIN
+#undef HTTPT_END
+
+    /* --------------------------------------------------------------------
+     *  Query string
+     * -------------------------------------------------------------------- */
+#define HTTPT_BEGIN(str_)                                                     \
+    do {                                                                      \
+        if (http_query_parameters_parse(str_,                                 \
+                                        &parameters, &nb_parameters) == -1) { \
+            HTTPT_DIE("%s:%d: cannot parse query: %s",                        \
+                      __FILE__, __LINE__, http_get_error());                  \
+        }                                                                     \
+    } while (0)
+
+#define HTTPT_END()                                    \
+    do {                                               \
+        for (size_t i = 0; i < nb_parameters; i++)     \
+            http_query_parameter_free(parameters + i); \
+        http_free(parameters);                         \
+    } while (0)
+
+    HTTPT_BEGIN("");
+    HTTPT_IS_EQUAL_UINT(nb_parameters, 0);
+    HTTPT_END();
+
+    HTTPT_BEGIN("a");
+    HTTPT_IS_EQUAL_UINT(nb_parameters, 1);
+    HTTPT_IS_EQUAL_STRING(parameters[0].name, "a");
+    HTTPT_IS_EQUAL_PTR(parameters[0].value, NULL);
+    HTTPT_END();
+
+    HTTPT_BEGIN("foo");
+    HTTPT_IS_EQUAL_UINT(nb_parameters, 1);
+    HTTPT_IS_EQUAL_STRING(parameters[0].name, "foo");
+    HTTPT_IS_EQUAL_PTR(parameters[0].value, NULL);
+    HTTPT_END();
+
+    HTTPT_BEGIN("foo=bar");
+    HTTPT_IS_EQUAL_UINT(nb_parameters, 1);
+    HTTPT_IS_EQUAL_STRING(parameters[0].name, "foo");
+    HTTPT_IS_EQUAL_STRING(parameters[0].value, "bar");
+    HTTPT_END();
+
+    HTTPT_BEGIN("a=1&b=2");
+    HTTPT_IS_EQUAL_UINT(nb_parameters, 2);
+    HTTPT_IS_EQUAL_STRING(parameters[0].name, "a");
+    HTTPT_IS_EQUAL_STRING(parameters[0].value, "1");
+    HTTPT_IS_EQUAL_STRING(parameters[1].name, "b");
+    HTTPT_IS_EQUAL_STRING(parameters[1].value, "2");
+    HTTPT_END();
+
+    HTTPT_BEGIN("a&b=2;c&d=3");
+    HTTPT_IS_EQUAL_UINT(nb_parameters, 4);
+    HTTPT_IS_EQUAL_STRING(parameters[0].name, "a");
+    HTTPT_IS_EQUAL_PTR(parameters[0].value, NULL);
+    HTTPT_IS_EQUAL_STRING(parameters[1].name, "b");
+    HTTPT_IS_EQUAL_STRING(parameters[1].value, "2");
+    HTTPT_IS_EQUAL_STRING(parameters[2].name, "c");
+    HTTPT_IS_EQUAL_PTR(parameters[2].value, NULL);
+    HTTPT_IS_EQUAL_STRING(parameters[3].name, "d");
+    HTTPT_IS_EQUAL_STRING(parameters[3].value, "3");
+    HTTPT_END();
+
+    HTTPT_BEGIN("a+b+=%20%c3%a9tat");
+    HTTPT_IS_EQUAL_UINT(nb_parameters, 1);
+    HTTPT_IS_EQUAL_STRING(parameters[0].name, "a b ");
+    HTTPT_IS_EQUAL_STRING(parameters[0].value, " état");
+    HTTPT_END();
+
+#define HTTPT_INVALID_QUERY(str_)                                             \
+    do {                                                                      \
+        if (http_query_parameters_parse(str_,                                 \
+                                        &parameters, &nb_parameters) == 0) {  \
+            HTTPT_DIE("%s:%d: parsed invalid query",                          \
+                      __FILE__, __LINE__);                                    \
+        }                                                                     \
+    } while (0)
+
+    HTTPT_INVALID_QUERY("&");
+    HTTPT_INVALID_QUERY("a=1&");
+    HTTPT_INVALID_QUERY("a=");
+    HTTPT_INVALID_QUERY("=1");
+
+#undef HTTPT_INVALID_QUERY
 
 #undef HTTPT_BEGIN
 #undef HTTPT_END

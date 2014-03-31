@@ -508,6 +508,8 @@ http_connection_preprocess_request(struct http_connection *connection,
             http_connection_http_error(connection, HTTP_BAD_REQUEST);
             goto msg_processed;
         }
+
+        uri = NULL;
     } else {
         /* Absolute URI or absolute path */
         uri = http_uri_new(uri_string);
@@ -532,6 +534,24 @@ http_connection_preprocess_request(struct http_connection *connection,
                 http_connection_http_error(connection, HTTP_BAD_REQUEST);
                 goto msg_processed;
             }
+        }
+    }
+
+    /* Query parameters */
+    if (uri && uri->query) {
+        struct http_query_parameter **p_query_parameters;
+        size_t *p_nb_query_parameters;
+
+        p_query_parameters = &msg->u.request.query_parameters;
+        p_nb_query_parameters = &msg->u.request.nb_query_parameters;
+
+        if (http_query_parameters_parse(uri->query,
+                                        p_query_parameters,
+                                        p_nb_query_parameters) == -1) {
+            http_connection_trace(connection, "cannot parse query: %s",
+                                  http_get_error());
+            http_connection_http_error(connection, HTTP_BAD_REQUEST);
+            goto msg_processed;
         }
     }
 
