@@ -10,3 +10,4 @@ session.vim
 /tests/uris
 
 /utils/http-server
+/utils/http-client

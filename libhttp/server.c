@@ -27,9 +27,6 @@
 #include "http.h"
 #include "internal.h"
 
-/* host + port + ipv6 brackets + colon */
-#define HTTP_HOST_PORT_BUFSZ (NI_MAXHOST + NI_MAXSERV + 2 + 1)
-
 static void http_server_on_timeout_timer(evutil_socket_t, short, void *);
 
 struct http_listener {

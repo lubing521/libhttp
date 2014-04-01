@@ -203,6 +203,9 @@ struct http_cfg {
 
             size_t max_request_uri_length;
         } server;
+
+        struct {
+        } client;
     } u;
 
     size_t max_header_name_length;
@@ -238,6 +241,10 @@ void http_server_shutdown(struct http_server *server);
 void http_server_set_msg_handler_arg(struct http_server *, void *);
 int http_server_add_route(struct http_server *,
                           enum http_method, const char *, http_msg_handler);
+
+/* Client */
+struct http_client *http_client_new(struct http_cfg *, struct event_base *);
+void http_client_delete(struct http_client *client);
 
 /* Connections */
 void http_connection_close(struct http_connection *);

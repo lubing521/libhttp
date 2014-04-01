@@ -328,6 +328,33 @@ bool http_server_does_listen_on(const struct http_server *,
 bool http_server_does_listen_on_host_string(const struct http_server *,
                                             const char *);
 
+/* Clients */
+
+/* host + port + ipv6 brackets + colon */
+#define HTTP_HOST_PORT_BUFSZ (NI_MAXHOST + NI_MAXSERV + 2 + 1)
+
+struct http_client {
+    struct http_cfg *cfg;
+
+    struct event_base *ev_base;
+
+    int sock;
+    struct event *ev_sock;
+
+    char host[NI_MAXHOST];
+    char numeric_host[NI_MAXHOST];
+    char port[NI_MAXSERV];
+    char host_port[HTTP_HOST_PORT_BUFSZ];
+    char numeric_host_port[HTTP_HOST_PORT_BUFSZ];
+
+    struct http_connection *connection;
+};
+
+void http_client_error(const struct http_client *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+void http_client_trace(const struct http_client *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+
 /* URIs */
 struct http_uri {
     char *scheme;
