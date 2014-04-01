@@ -41,7 +41,7 @@ static struct https https;
 static void https_die(const char *, ...);
 static void https_usage(const char *, int);
 
-static void https_initialize(const struct http_cfg *);
+static void https_initialize(struct http_cfg *);
 static void https_shutdown(void);
 
 static void https_on_signal(evutil_socket_t, short, void *);
@@ -85,7 +85,8 @@ main(int argc, char **argv) {
         }
     }
 
-    cfg = http_default_cfg;
+    http_cfg_init(&cfg);
+
     cfg.port = "8080";
     cfg.error_hook = https_on_error;
     cfg.trace_hook = https_on_trace;
@@ -101,6 +102,8 @@ main(int argc, char **argv) {
     }
 
     https_shutdown();
+
+    http_cfg_free(&cfg);
     return 0;
 }
 
@@ -131,7 +134,7 @@ https_die(const char *fmt, ...) {
 }
 
 static void
-https_initialize(const struct http_cfg *cfg) {
+https_initialize(struct http_cfg *cfg) {
     https.ev_base = event_base_new();
     if (!https.ev_base)
         https_die("cannot create event base: %s", strerror(errno));

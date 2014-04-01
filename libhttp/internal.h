@@ -297,7 +297,7 @@ int http_route_base_find_path_methods(struct http_route_base *,
 
 /* Servers */
 struct http_server {
-    struct http_cfg cfg;
+    struct http_cfg *cfg;
 
     struct event_base *ev_base;
     struct event *timeout_timer;

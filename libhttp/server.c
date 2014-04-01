@@ -52,8 +52,7 @@ static void http_listener_close(struct http_listener *);
 static void http_listener_on_sock_event(evutil_socket_t, short, void *);
 
 struct http_server *
-http_server_listen(const struct http_cfg *cfg,
-                   struct event_base *ev_base) {
+http_server_listen(struct http_cfg *cfg, struct event_base *ev_base) {
     struct timeval tv;
     struct http_server *server;
     struct addrinfo hints, *res;
@@ -62,7 +61,7 @@ http_server_listen(const struct http_cfg *cfg,
     server = http_malloc(sizeof(struct http_server));
     memset(server, 0, sizeof(struct http_server));
 
-    server->cfg = *cfg;
+    server->cfg = cfg;
 
     server->ev_base = ev_base;
 
@@ -85,10 +84,10 @@ http_server_listen(const struct http_cfg *cfg,
     hints.ai_protocol = IPPROTO_TCP;
     hints.ai_addrlen = 0;
 
-    ret = getaddrinfo(server->cfg.host, server->cfg.port, &hints, &res);
+    ret = getaddrinfo(cfg->host, cfg->port, &hints, &res);
     if (ret != 0) {
         http_set_error("cannot resolve address %s:%s: %s",
-                       server->cfg.host, server->cfg.port, gai_strerror(ret));
+                       cfg->host, cfg->port, gai_strerror(ret));
         goto error;
     }
 
@@ -208,14 +207,14 @@ http_server_error(const struct http_server *server, const char *fmt, ...) {
     char buf[HTTP_ERROR_BUFSZ];
     va_list ap;
 
-    if (!server->cfg.error_hook)
+    if (!server->cfg->error_hook)
         return;
 
     va_start(ap, fmt);
     vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
     va_end(ap);
 
-    server->cfg.error_hook(buf, server->cfg.hook_arg);
+    server->cfg->error_hook(buf, server->cfg->hook_arg);
 }
 
 void
@@ -223,14 +222,14 @@ http_server_trace(const struct http_server *server, const char *fmt, ...) {
     char buf[HTTP_ERROR_BUFSZ];
     va_list ap;
 
-    if (!server->cfg.trace_hook)
+    if (!server->cfg->trace_hook)
         return;
 
     va_start(ap, fmt);
     vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
     va_end(ap);
 
-    server->cfg.trace_hook(buf, server->cfg.hook_arg);
+    server->cfg->trace_hook(buf, server->cfg->hook_arg);
 }
 
 bool
@@ -334,7 +333,7 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
 
     listener->server = server;
 
-    cfg = &server->cfg;
+    cfg = server->cfg;
 
     listener->sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
     if (listener->sock == -1) {

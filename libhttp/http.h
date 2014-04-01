@@ -24,6 +24,7 @@
 #include <event.h>
 
 #include <buffer.h>
+#include <hashtable.h>
 
 /* Error handling */
 const char *http_get_error(void);
@@ -167,6 +168,7 @@ typedef void (*http_error_hook)(const char *, void *);
 typedef void (*http_trace_hook)(const char *, void *);
 typedef void (*http_request_hook)(struct http_connection *,
                                   const struct http_msg *, void *);
+typedef void *(*http_body_decoder)(const struct http_msg *);
 
 struct http_cfg {
     const char *host;
@@ -194,16 +196,18 @@ struct http_cfg {
     enum http_bufferization bufferization;
 
     uint64_t connection_timeout; /* milliseconds */
+
+    struct ht_table *body_decoders;
 };
 
-extern struct http_cfg http_default_cfg;
+int http_cfg_init(struct http_cfg *cfg);
+void http_cfg_free(struct http_cfg *cfg);
 
 /* Server */
 typedef void (*http_msg_handler)(struct http_connection *,
                                  const struct http_msg *, void *);
 
-struct http_server *http_server_listen(const struct http_cfg *,
-                                       struct event_base *);
+struct http_server *http_server_listen(struct http_cfg *, struct event_base *);
 void http_server_shutdown(struct http_server *server);
 
 void http_server_set_msg_handler_arg(struct http_server *, void *);

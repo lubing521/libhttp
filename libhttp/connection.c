@@ -84,7 +84,7 @@ http_connection_setup(struct http_server *server, int sock) {
     }
 
     if (http_parser_init(&connection->parser, HTTP_MSG_REQUEST,
-                         &server->cfg) == -1) {
+                         server->cfg) == -1) {
         goto error;
     }
 
@@ -109,7 +109,7 @@ http_connection_check_for_timeout(struct http_connection *connection,
     uint64_t diff;
 
     diff = now - connection->last_activity;
-    if (diff > connection->server->cfg.connection_timeout) {
+    if (diff > connection->server->cfg->connection_timeout) {
         http_connection_http_error(connection, HTTP_REQUEST_TIMEOUT);
         http_connection_shutdown(connection);
     }
@@ -237,7 +237,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
     ssize_t ret;
 
     connection = arg;
-    cfg = &connection->server->cfg;
+    cfg = connection->server->cfg;
 
     ret = bf_buffer_read(connection->rbuf, connection->sock, BUFSIZ);
     if (ret == -1) {
@@ -629,7 +629,7 @@ http_connection_on_msg_processed(struct http_connection *connection) {
 
     assert(connection->current_msg);
 
-    cfg = &connection->server->cfg;
+    cfg = connection->server->cfg;
     msg = connection->current_msg;
 
     if (msg->version == HTTP_1_0) {
@@ -668,8 +668,7 @@ http_connection_write_auto_headers(struct http_connection *connection) {
     const struct http_cfg *cfg;
     char date[HTTP_RFC1123_DATE_BUFSZ];
 
-    cfg = &connection->server->cfg;
-
+    cfg = connection->server->cfg;
 
     if (http_format_timestamp(date, HTTP_RFC1123_DATE_BUFSZ,
                               time(NULL)) == -1) {

@@ -29,7 +29,7 @@ main(int argc, char **argv) {
     struct http_msg *msg;
     bool skip_header_processing;
 
-    cfg = http_default_cfg;
+    http_cfg_init(&cfg);
 
     cfg.u.server.max_request_uri_length = 8;
 
@@ -298,5 +298,6 @@ main(int argc, char **argv) {
 #undef HTTPT_BEGIN
 #undef HTTPT_END
 
+    http_cfg_free(&cfg);
     return 0;
 }

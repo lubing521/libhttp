@@ -22,33 +22,6 @@
 #include "http.h"
 #include "internal.h"
 
-struct http_cfg http_default_cfg = {
-    .host = "localhost",
-    .port = "80",
-
-    .error_hook = NULL,
-    .trace_hook = NULL,
-    .hook_arg = NULL,
-
-    .u = {
-        .server = {
-            .connection_backlog = 5,
-
-            .max_request_uri_length = 2048,
-        }
-    },
-
-    .max_header_name_length = 128,
-    .max_header_value_length = 4096,
-
-    .max_content_length = 16 * 1000 * 1000,
-    .max_chunk_length = 1000 * 1000,
-
-    .bufferization = HTTP_BUFFERIZE_AUTO,
-
-    .connection_timeout = 10000,
-};
-
 static int http_msg_process_headers(struct http_parser *);
 static int http_msg_finalize_body(struct http_msg *msg);
 
