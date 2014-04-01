@@ -372,6 +372,8 @@ http_route_base_find_path_methods(struct http_route_base *base,
         }
     }
 
+    http_path_free(path_components, nb_path_components);
+
     *p_nb_methods = nb_methods;
     return 0;
 }
