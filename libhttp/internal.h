@@ -125,10 +125,15 @@ struct http_msg {
     size_t total_body_length;
     bool is_body_chunked;
 
+    void *content;
+    const struct http_content_decoder *content_decoder;
+
     bool has_content_length;
     size_t content_length;
 
     uint32_t connection_options;
+
+    const char *content_type;
 };
 
 void http_msg_init(struct http_msg *);
@@ -137,6 +142,11 @@ void http_msg_free(struct http_msg *);
 int http_msg_add_header(struct http_msg *, const struct http_header *);
 
 bool http_msg_can_have_body(const struct http_msg *);
+
+/* Content decoders */
+void *http_content_form_data_decode(const struct http_msg *,
+                                    const struct http_cfg *);
+void http_content_form_data_delete(void *);
 
 /* Misc */
 int http_token_list_get_next_token(const char *, char *, size_t, const char **);

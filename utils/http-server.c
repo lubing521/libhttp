@@ -85,7 +85,8 @@ main(int argc, char **argv) {
         }
     }
 
-    http_cfg_init(&cfg);
+    if (http_cfg_init(&cfg) == -1)
+        https_die("cannot initialize configuration: %s", http_get_error());
 
     cfg.port = "8080";
     cfg.error_hook = https_on_error;
@@ -216,7 +217,7 @@ https_on_request(struct http_connection *connection,
     }
 
     if (http_msg_body_length(msg) > 0)
-        printf("body     %zu bytes\n", http_msg_body_length(msg));
+        printf("body     %zu bytes\n\n", http_msg_body_length(msg));
 }
 
 static void

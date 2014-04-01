@@ -23,7 +23,8 @@
 #include "internal.h"
 
 static int http_msg_process_headers(struct http_parser *);
-static int http_msg_finalize_body(struct http_msg *msg);
+static int http_msg_finalize_body(struct http_msg *msg,
+                                  const struct http_cfg *);
 
 static bool http_is_token_char(unsigned char);
 
@@ -222,6 +223,11 @@ http_header_name(const struct http_header *header) {
 const char *
 http_header_value(const struct http_header *header) {
     return header->value;
+}
+
+const void *
+http_msg_content(const struct http_msg *msg) {
+    return msg->content;
 }
 
 char *
@@ -511,6 +517,9 @@ http_msg_free(struct http_msg *msg) {
     http_free(msg->headers);
 
     http_free(msg->body);
+
+    if (msg->content_decoder)
+        msg->content_decoder->delete(msg->content);
 
     memset(msg, 0, sizeof(struct http_msg));
 }
@@ -841,7 +850,7 @@ http_msg_parse(struct bf_buffer *buf, struct http_parser *parser) {
           && parser->state != HTTP_PARSER_ERROR);
 
     if (parser->state == HTTP_PARSER_DONE) {
-        if (http_msg_finalize_body(&parser->msg) == -1)
+        if (http_msg_finalize_body(&parser->msg, parser->cfg) == -1)
             return -1;
     }
 
@@ -958,9 +967,8 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
     while (len > 0) {
         if (*ptr == ' ') {
             toklen = (size_t)(ptr - start);
-            if (toklen > cfg->u.server.max_request_uri_length) {
+            if (toklen > cfg->u.server.max_request_uri_length)
                 HTTP_ERROR(HTTP_REQUEST_URI_TOO_LONG, "request uri too large");
-            }
 
             msg->u.request.uri_string = http_strndup(start, toklen);
             if (!msg->u.request.uri_string)
@@ -1429,6 +1437,8 @@ http_msg_process_headers(struct http_parser *parser) {
                 HTTP_ERROR(HTTP_REQUEST_ENTITY_TOO_LARGE,
                            "Content-Length header too large");
             }
+        } else if (HTTP_HEADER_IS("Content-Type")) {
+            msg->content_type = header->value;
         } else if (HTTP_HEADER_IS("Transfer-Encoding")) {
             const char *list, *end;
             char token[32];
@@ -1527,32 +1537,44 @@ ignore_header:
 #undef HTTP_SKIP_LWS
 
 static int
-http_msg_finalize_body(struct http_msg *msg) {
+http_msg_finalize_body(struct http_msg *msg, const struct http_cfg *cfg) {
     char *body;
-    size_t sz;
 
     /* We add a null byte after the body.
      *
      * - If the body is empty, body_length is still 0.
      * - If the body contains text data, it's now a nice null terminated
      *   string.
-     * - If the body contains binary data, body_length is still 0, no harm
-     *   done.
+     * - If the body contains binary data, body_length is still correct, no
+     *   harm done.
      */
 
     if (msg->body == NULL) {
-        sz = 1;
-        body = http_malloc(sz);
+        assert(msg->body_length == 0);
+        body = http_malloc(1);
     } else {
-        sz = msg->body_length + 1;
-        body = http_realloc(msg->body, sz);
+        body = http_realloc(msg->body, msg->body_length + 1);
     }
 
     if (!body)
         return -1;
 
-    body[sz - 1] = '\0';
     msg->body = body;
+    msg->body[msg->body_length] = '\0';
+
+    /* If there is a body and a if a content decoder available, use it */
+    if (msg->body_length > 0 && msg->content_type) {
+        const struct http_content_decoder *decoder;
+
+        decoder = http_cfg_content_decoder_get(cfg, msg->content_type);
+        if (decoder) {
+            msg->content = decoder->decode(msg, cfg);
+            if (!msg->content)
+                return -1;
+
+            msg->content_decoder = decoder;
+        }
+    }
 
     return 0;
 }

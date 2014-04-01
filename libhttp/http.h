@@ -163,12 +163,30 @@ const char *http_msg_get_query_parameter(const struct http_msg *, const char *);
 const char *http_header_name(const struct http_header *);
 const char *http_header_value(const struct http_header *);
 
+const void *http_msg_content(const struct http_msg *);
+
+struct http_form_data;
+
+const char *http_form_data_get_parameter(struct http_form_data *, const char *);
+
 /* Configuration */
 typedef void (*http_error_hook)(const char *, void *);
 typedef void (*http_trace_hook)(const char *, void *);
 typedef void (*http_request_hook)(struct http_connection *,
                                   const struct http_msg *, void *);
-typedef void *(*http_body_decoder)(const struct http_msg *);
+
+struct http_cfg;
+
+typedef void *(*http_content_decode_func)(const struct http_msg *,
+                                          const struct http_cfg *);
+typedef void (*http_content_delete_func)(void *);
+
+struct http_content_decoder {
+    const char *content_type;
+
+    http_content_decode_func decode;
+    http_content_delete_func delete;
+};
 
 struct http_cfg {
     const char *host;
@@ -197,11 +215,18 @@ struct http_cfg {
 
     uint64_t connection_timeout; /* milliseconds */
 
-    struct ht_table *body_decoders;
+    struct http_content_decoder *content_decoders;
+    size_t nb_content_decoders;
 };
 
 int http_cfg_init(struct http_cfg *cfg);
 void http_cfg_free(struct http_cfg *cfg);
+
+int http_cfg_content_decoder_add(struct http_cfg *, const char *,
+                                 http_content_decode_func,
+                                 http_content_delete_func);
+const struct http_content_decoder *
+http_cfg_content_decoder_get(const struct http_cfg *, const char *);
 
 /* Server */
 typedef void (*http_msg_handler)(struct http_connection *,
