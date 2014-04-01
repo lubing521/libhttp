@@ -1227,25 +1227,35 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
         msg->body_length = msg->content_length;
         msg->total_body_length = msg->content_length;
     } else {
+        size_t remainder;
+
         http_free(msg->body);
 
-        if (len < msg->content_length)
+        remainder = msg->content_length - msg->total_body_length;
+        if (len <= remainder) {
             msg->body_length = len;
+        } else {
+            msg->body_length = remainder;
+        }
+
         msg->total_body_length += msg->body_length;
     }
 
-    if (msg->content_length > 0) {
+    if (msg->body_length > 0) {
         msg->body = http_strndup(ptr, msg->body_length);
         if (!msg->body)
             return -1;
 
-        bf_buffer_skip(buf, msg->content_length);
+        bf_buffer_skip(buf, msg->body_length);
     }
 
-    if (msg->total_body_length == msg->content_length)
+    if (msg->total_body_length == msg->content_length) {
         parser->state = HTTP_PARSER_DONE;
 
-    return 1;
+        return 1;
+    } else {
+        return 0;
+    }
 }
 
 int
