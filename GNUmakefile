@@ -75,7 +75,9 @@ doc_SRC= $(wildcard doc/*.mkd)
 doc_HTML= $(subst .mkd,.html,$(doc_SRC))
 
 # Rules
-all: $(libhttp_LIB) $(tests_BIN) $(utils_BIN) $(doc_HTML)
+all: lib $(tests_BIN) $(utils_BIN) $(doc_HTML)
+
+lib: $(libhttp_LIB)
 
 $(libhttp_OBJ): $(libhttp_INC)
 $(libhttp_LIB): $(libhttp_OBJ)
@@ -121,4 +123,4 @@ tags:
 test: $(tests_BIN)
 	$(foreach test,$(tests_BIN), $(shell ./$(test)))
 
-.PHONY: all clean coverage install uninstall tags test
+.PHONY: all clean coverage install lib uninstall tags test
