@@ -30,8 +30,12 @@ static void http_connection_call_msg_handler(struct http_connection *,
 static void http_connection_on_msg_processed(struct http_connection *);
 
 static int http_connection_write_auto_headers(struct http_connection *);
+static int http_connection_write_error_body(struct http_connection *,
+                                            enum http_status_code);
 static int http_connection_write_options_response(struct http_connection *,
                                                   struct http_msg *);
+static int http_connection_write_405_error(struct http_connection *,
+                                           struct http_msg *);
 
 struct http_connection *
 http_connection_setup(struct http_server *server, int sock) {
@@ -165,31 +169,11 @@ http_connection_printf(struct http_connection *connection,
 int
 http_connection_http_error(struct http_connection *connection,
                            enum http_status_code status_code) {
-    const char *reason_phrase;
-    char body[1024];
-    size_t body_len;
 
-    reason_phrase = http_status_code_to_reason_phrase(status_code);
-    snprintf(body, sizeof(body), "<h1>%d %s</h1>\n",
-             status_code, reason_phrase);
-    body_len = strlen(body);
-
-    if (http_connection_write_response(connection,
-                                       status_code, reason_phrase) == -1) {
+    if (http_connection_write_response(connection, status_code, NULL) == -1)
         goto error;
-    }
 
-    if (http_connection_write_header(connection,
-                                     "Content-Type", "text/html") == -1) {
-        goto error;
-    }
-
-    if (http_connection_write_header_size(connection,
-                                          "Content-Length", body_len) == -1) {
-        goto error;
-    }
-
-    if (http_connection_write_body(connection, body, body_len) == -1)
+    if (http_connection_write_error_body(connection, status_code) == -1)
         goto error;
 
     return 0;
@@ -605,20 +589,25 @@ http_connection_call_msg_handler(struct http_connection *connection,
         }
 
         if (!route) {
+            int ret;
+
             switch (match_result) {
             case HTTP_ROUTE_MATCH_METHOD_NOT_FOUND:
-                http_connection_http_error(connection, HTTP_METHOD_NOT_ALLOWED);
+                ret = http_connection_write_405_error(connection, msg);
                 break;
 
             case HTTP_ROUTE_MATCH_PATH_NOT_FOUND:
-                http_connection_http_error(connection, HTTP_NOT_FOUND);
+                ret = http_connection_http_error(connection, HTTP_NOT_FOUND);
                 break;
 
             case HTTP_ROUTE_MATCH_WRONG_PATH:
             default:
-                http_connection_http_error(connection, HTTP_BAD_REQUEST);
+                ret = http_connection_http_error(connection, HTTP_BAD_REQUEST);
                 break;
             }
+
+            if (ret == -1)
+                return;
 
             http_connection_on_msg_processed(connection);
             return;
@@ -694,6 +683,39 @@ http_connection_write_auto_headers(struct http_connection *connection) {
 }
 
 static int
+http_connection_write_error_body(struct http_connection *connection,
+                                 enum http_status_code status_code) {
+    const char *reason_phrase;
+    char body[1024];
+    size_t body_len;
+
+    reason_phrase = http_status_code_to_reason_phrase(status_code);
+    snprintf(body, sizeof(body), "<h1>%d %s</h1>\n",
+             status_code, reason_phrase);
+    body_len = strlen(body);
+
+    if (http_connection_write_header(connection,
+                                     "Content-Type", "text/html") == -1) {
+        goto error;
+    }
+
+    if (http_connection_write_header_size(connection,
+                                          "Content-Length", body_len) == -1) {
+        goto error;
+    }
+
+    if (http_connection_write_body(connection, body, body_len) == -1)
+        goto error;
+
+    return 0;
+
+error:
+    http_connection_error(connection, "%s", http_get_error());
+    http_connection_close(connection);
+    return -1;
+}
+
+static int
 http_connection_write_options_response(struct http_connection *connection,
                                        struct http_msg *msg) {
     if (strcmp(msg->u.request.uri_string, "*") == 0) {
@@ -739,6 +761,60 @@ http_connection_write_options_response(struct http_connection *connection,
                 goto error;
             }
         }
+    }
+
+    return 0;
+
+error:
+    http_connection_error(connection, "%s", http_get_error());
+    http_connection_close(connection);
+    return -1;
+}
+
+static int
+http_connection_write_405_error(struct http_connection *connection,
+                                struct http_msg *msg) {
+    enum http_method methods[HTTP_METHOD_MAX];
+    struct http_route_base *route_base;
+    struct http_uri *uri;
+    size_t nb_methods;
+
+    assert(msg->type == HTTP_MSG_REQUEST);
+
+    route_base = connection->server->route_base;
+    uri = msg->u.request.uri;
+
+    if (http_route_base_find_path_methods(route_base, uri->path,
+                                          methods, &nb_methods) == -1) {
+        goto error;
+    }
+
+    if (nb_methods == 0) {
+        http_connection_http_error(connection, HTTP_NOT_FOUND);
+        return 0;
+    }
+
+    if (http_connection_write_response(connection, HTTP_METHOD_NOT_ALLOWED,
+                                       NULL) == -1) {
+        goto error;
+    }
+
+    for (size_t i = 0; i < nb_methods; i++) {
+        enum http_method method;
+        const char *method_string;
+
+        method = methods[i];
+        method_string = http_method_to_string(method);
+
+        if (http_connection_write_header(connection,
+                                         "Allow", method_string) == -1) {
+            goto error;
+        }
+    }
+
+    if (http_connection_write_error_body(connection,
+                                         HTTP_METHOD_NOT_ALLOWED) == -1) {
+        return -1;
     }
 
     return 0;
