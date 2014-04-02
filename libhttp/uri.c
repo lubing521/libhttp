@@ -61,6 +61,7 @@ http_uri_delete(struct http_uri *uri) {
     http_free(uri->port);
     http_free(uri->path);
     http_free(uri->query);
+    http_free(uri->fragment);
 
     memset(uri, 0, sizeof(struct http_uri));
     http_free(uri);
@@ -342,6 +343,21 @@ path:
             goto error;
     }
 
+    /* Fragment (optional) */
+    if (*ptr == '#') {
+        ptr++;
+
+        start = ptr;
+
+        while (*ptr != '\0')
+            ptr++;
+
+        toklen = (size_t)(ptr - start);
+        uri->fragment = http_uri_decode_component(start, toklen);
+        if (!uri->fragment)
+            goto error;
+    }
+
     if (http_uri_finalize(uri) == -1)
         goto error;
 
@@ -513,7 +529,7 @@ http_uri_encode(const struct http_uri *uri) {
             goto error;
     }
 
-    /* Path and query */
+    /* Path, query and fragment */
     if (uri->path) {
         if (http_uri_encode_component(uri->path, buf) == -1)
             goto error;
@@ -527,6 +543,14 @@ http_uri_encode(const struct http_uri *uri) {
             goto error;
 
         if (http_uri_encode_component(uri->query, buf) == -1)
+            goto error;
+    }
+
+    if (uri->fragment) {
+        if (bf_buffer_add(buf, "#", 1) == -1)
+            goto error;
+
+        if (http_uri_encode_component(uri->fragment, buf) == -1)
             goto error;
     }
 
@@ -573,6 +597,14 @@ http_uri_encode_path_and_query(const struct http_uri *uri) {
             goto error;
 
         if (http_uri_encode_component(uri->query, buf) == -1)
+            goto error;
+    }
+
+    if (uri->fragment) {
+        if (bf_buffer_add(buf, "#", 1) == -1)
+            goto error;
+
+        if (http_uri_encode_component(uri->fragment, buf) == -1)
             goto error;
     }
 

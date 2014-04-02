@@ -109,12 +109,14 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
     HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_IS_EQUAL_STRING(uri->fragment, "foo");
     HTTPT_END();
 
     HTTPT_BEGIN("http://example.com#foo");
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
     HTTPT_IS_EQUAL_STRING(uri->path, "/");
+    HTTPT_IS_EQUAL_STRING(uri->fragment, "foo");
     HTTPT_END();
 
     HTTPT_BEGIN("http://example.com:8080/");
@@ -162,6 +164,7 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
     HTTPT_IS_EQUAL_STRING(uri->path, "/a/b/c");
     HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
+    HTTPT_IS_EQUAL_STRING(uri->fragment, "foo");
     HTTPT_END();
 
     HTTPT_BEGIN("http://foo:bar@example.com:8080/path?a=1&b=2");

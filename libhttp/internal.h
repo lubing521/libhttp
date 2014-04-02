@@ -375,6 +375,7 @@ struct http_uri {
     char *port;
     char *path;
     char *query;
+    char *fragment;
 };
 
 char *http_uri_decode_query_component(const char *, size_t);
