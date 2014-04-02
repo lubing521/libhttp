@@ -27,6 +27,7 @@ main(int argc, char **argv) {
     struct http_cfg cfg;
     struct http_parser parser;
     struct http_msg *msg;
+    enum http_msg_type msg_type;
     bool skip_header_processing;
 
     http_cfg_init(&cfg);
@@ -41,6 +42,9 @@ main(int argc, char **argv) {
 
     cfg.bufferization = HTTP_BUFFERIZE_ALWAYS;
 
+    msg_type = HTTP_MSG_REQUEST;
+    skip_header_processing = false;
+
 #define HTTPT_BEGIN(str_)                                       \
     do {                                                        \
         int ret;                                                \
@@ -48,7 +52,7 @@ main(int argc, char **argv) {
         buf = bf_buffer_new(0);                                 \
         bf_buffer_add_string(buf, str_);                        \
                                                                 \
-        http_parser_init(&parser, HTTP_MSG_REQUEST, &cfg);      \
+        http_parser_init(&parser, msg_type, &cfg);              \
         parser.skip_header_processing = skip_header_processing; \
         msg = &parser.msg;                                      \
                                                                 \
@@ -88,8 +92,6 @@ main(int argc, char **argv) {
         HTTPT_END();                                           \
     } while (0)
 
-    skip_header_processing = true;
-
     HTTPT_REQUEST_LINE("GET / HTTP/1.0\r\n\r\n",
                        HTTP_GET, "/", HTTP_1_0);
     HTTPT_REQUEST_LINE("POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n",
@@ -124,6 +126,65 @@ main(int argc, char **argv) {
 #undef HTTPT_INVALID_REQUEST_LINE
 
     /* --------------------------------------------------------------------
+     *  Status lines
+     * -------------------------------------------------------------------- */
+#define HTTPT_STATUS_LINE(str_, status_code_, reason_phrase_, version_)       \
+    do {                                                                      \
+        HTTPT_BEGIN(str_);                                                    \
+        HTTPT_IS_EQUAL_INT(msg->u.response.status_code, status_code_);        \
+        HTTPT_IS_EQUAL_STRING(msg->u.response.reason_phrase, reason_phrase_); \
+        HTTPT_IS_EQUAL_INT(msg->version, version_);                           \
+        HTTPT_END();                                                          \
+    } while (0)
+
+#define HTTPT_INVALID_STATUS_LINE(str_)                         \
+    do {                                                        \
+        int ret;                                                \
+                                                                \
+        buf = bf_buffer_new(0);                                 \
+        bf_buffer_add_string(buf, str_);                        \
+                                                                \
+        http_parser_init(&parser, msg_type, &cfg);              \
+        parser.skip_header_processing = skip_header_processing; \
+        msg = &parser.msg;                                      \
+                                                                \
+        ret = http_msg_parse(buf, &parser);                     \
+        if (ret == 1) {                                         \
+            HTTPT_DIE("%s:%d: parsed invalid message",          \
+                      __FILE__, __LINE__);                      \
+        } else if (ret == 0) {                                  \
+            HTTPT_DIE("%s:%d: truncated message",               \
+                      __FILE__, __LINE__);                      \
+        }                                                       \
+    } while (0)
+
+    msg_type = HTTP_MSG_RESPONSE;
+
+    HTTPT_STATUS_LINE("HTTP/1.0 200 OK\r\n\r\n",
+                      HTTP_OK, "OK", HTTP_1_0);
+    HTTPT_STATUS_LINE("HTTP/1.0 200 foo bar\tbaz\r\n\r\n",
+                      HTTP_OK, "foo bar\tbaz", HTTP_1_0);
+    HTTPT_STATUS_LINE("HTTP/1.0  200    foo bar\tbaz  \r\n\r\n",
+                      HTTP_OK, "foo bar\tbaz  ", HTTP_1_0);
+
+    /* Invalid version */
+    HTTPT_INVALID_STATUS_LINE("HTTP 200 OK\r\n\r\n");
+    HTTPT_INVALID_STATUS_LINE("HTTP/4.2 200 OK\r\n\r\n");
+    HTTPT_INVALID_STATUS_LINE("HELLOWORLD 200 OK\r\n\r\n");
+
+    /* Invalid status code */
+    HTTPT_INVALID_STATUS_LINE("HTTP/1.0 200foo OK\r\n\r\n");
+    HTTPT_INVALID_STATUS_LINE("HTTP/1.0 20x OK\r\n\r\n");
+    HTTPT_INVALID_STATUS_LINE("HTTP/1.0 abc OK\r\n\r\n");
+
+    /* Invalid reason phrase */
+    HTTPT_INVALID_STATUS_LINE("HTTP/1.0 200\r\n\r\n");
+    HTTPT_INVALID_STATUS_LINE("HTTP/1.0 200 \r\n\r\n");
+
+#undef HTTP_STATUS_LINE
+#undef HTTP_INVALID_STATUS_LINE
+
+    /* --------------------------------------------------------------------
      *  Headers
      * -------------------------------------------------------------------- */
 #define HTTPT_BEGIN_HEADERS(str_)                  \
@@ -145,6 +206,7 @@ main(int argc, char **argv) {
         HTTPT_IS_EQUAL_STRING(msg->headers[idx_].value, value_); \
     } while (0)
 
+    msg_type = HTTP_MSG_REQUEST;
     skip_header_processing = true;
 
     HTTPT_BEGIN_HEADERS("Foo: bar\r\n\r\n");
@@ -195,14 +257,16 @@ main(int argc, char **argv) {
     /* --------------------------------------------------------------------
      *  Body
      * -------------------------------------------------------------------- */
-#define HTTPT_BEGIN_BODY(str_)                                      \
-    do {                                                            \
-        HTTPT_BEGIN("PUT / HTTP/1.1\r\nHost: localhost\r\n" str_);  \
-                                                                    \
-        if (parser.status_code > 0) {                               \
-            HTTPT_DIE("%s:%d: invalid message (error %d)",          \
-                      __FILE__, __LINE__, parser.status_code);      \
-        }                                                           \
+#define HTTPT_BEGIN_BODY(str_)                                                \
+    do {                                                                      \
+        HTTPT_BEGIN("PUT / HTTP/1.0\r\nHost: localhost\r\n" str_);            \
+                                                                              \
+        if (parser.status_code > 0) {                                         \
+            HTTPT_DIE("%s:%d: invalid message (%s): %s",                      \
+                      __FILE__, __LINE__,                                     \
+                      http_status_code_to_reason_phrase(parser.status_code),  \
+                      parser.errmsg);                                         \
+        }                                                                     \
     } while (0)
 
     cfg.max_header_name_length = 1024;

@@ -490,6 +490,7 @@ http_request_free(struct http_request *request) {
 
 void
 http_response_free(struct http_response *response) {
+    http_free(response->reason_phrase);
 }
 
 void
@@ -816,6 +817,8 @@ http_msg_parse(struct bf_buffer *buf, struct http_parser *parser) {
                 ret = http_msg_parse_request_line(buf, parser);
             } else if (parser->msg.type == HTTP_MSG_RESPONSE) {
                 ret = http_msg_parse_status_line(buf, parser);
+                if (ret == 1 && parser->status_code == 1)
+                    return -1;
             } else {
                 http_set_error("unknown message type %d", parser->msg.type);
                 return -1;
@@ -864,7 +867,7 @@ http_msg_parse(struct bf_buffer *buf, struct http_parser *parser) {
  * - size_t len: the number of bytes left in the current buffer.
  */
 
-#define HTTP_ERROR(status_code_, fmt_, ...)                           \
+#define HTTP_ERROR(status_code_, fmt_, ...)                          \
     do {                                                             \
         http_parser_fail(parser, status_code_, fmt_, ##__VA_ARGS__); \
         return 1;                                                    \
@@ -1051,8 +1054,137 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
 
 int
 http_msg_parse_status_line(struct bf_buffer *buf, struct http_parser *parser) {
-    /* TODO */
-    return 0;
+    const struct http_cfg *cfg;
+    struct http_msg *msg;
+    const char *ptr, *start;
+    size_t len, toklen;
+    bool found;
+
+    cfg = parser->cfg;
+    msg = &parser->msg;
+
+    ptr = bf_buffer_data(buf);
+    len = bf_buffer_length(buf);
+
+    /* HTTP Version */
+    start = ptr;
+    found = false;
+    while (len > 0) {
+        if (*ptr == ' ') {
+            const char *prefix;
+            size_t prefix_sz;
+
+            toklen = (size_t)(ptr - start);
+
+            prefix = "HTTP/";
+            prefix_sz = strlen(prefix);
+
+            if (toklen < prefix_sz || memcmp(start, prefix, prefix_sz) != 0)
+                HTTP_ERROR(1, "invalid http version format");
+
+            start += prefix_sz;
+            toklen -= prefix_sz;
+
+            if (toklen < 3)
+                HTTP_ERROR(1, "invalid http version format");
+
+            if (memcmp(start, "1.0", toklen) == 0) {
+                msg->version = HTTP_1_0;
+            } else if (memcmp(start, "1.1", toklen) == 0) {
+                msg->version = HTTP_1_1;
+            } else {
+                HTTP_ERROR(1, "unsupported http version");
+            }
+
+            found = true;
+            break;
+        }
+
+        ptr++;
+        len--;
+    }
+
+    if (!found) {
+        /* The longest version string is HTTP/x.y with x < 9 and y < 9 */
+        if ((size_t)(ptr - start) > 8)
+            HTTP_ERROR(HTTP_HTTP_VERSION_NOT_SUPPORTED,
+                       "unsupported http version");
+
+        return 0;
+    }
+
+    /* Status Code */
+    HTTP_SKIP_MULTIPLE_SP();
+
+    start = ptr;
+    while (len > 0) {
+        if (*ptr == ' ') {
+            int code;
+
+            toklen = (size_t)(ptr - start);
+            if (toklen == 0)
+                HTTP_ERROR(1, "empty status code");
+
+            if (toklen != 3)
+                HTTP_ERROR(1, "invalid status code");
+
+            code = (start[0] - '0') * 100
+                 + (start[1] - '0') * 10
+                 + (start[2] - '0');
+            msg->u.response.status_code = (enum http_status_code)code;
+
+            found = true;
+            break;
+        } else if (*ptr < '0' || *ptr > '9') {
+            HTTP_ERROR(1, "invalid character \\%hhu in status code", *ptr);
+        }
+
+        ptr++;
+        len--;
+    }
+
+    if (!found) {
+        if ((size_t)(ptr - start) > 3)
+            HTTP_ERROR(1, "invalid status code");
+
+        return 0;
+    }
+
+    /* Reason Phrase */
+    HTTP_SKIP_MULTIPLE_SP();
+
+    start = ptr;
+    while (len > 0) {
+        if (*ptr == '\r') {
+            toklen = (size_t)(ptr - start);
+            if (toklen == 0)
+                HTTP_ERROR(1, "empty reason phrase");
+
+            msg->u.response.reason_phrase = http_strndup(start, toklen);
+            if (!msg->u.response.reason_phrase)
+                return -1;
+
+            found = true;
+            break;
+        }
+
+        ptr++;
+        len--;
+    }
+
+    if (!found) {
+        if ((size_t)(ptr - start) > cfg->u.client.max_reason_phrase_length)
+            HTTP_ERROR(1, "reason phrase too long");
+
+        return 0;
+    }
+
+    HTTP_SKIP_CRLF();
+
+    bf_buffer_skip(buf, bf_buffer_length(buf) - len);
+
+    parser->state = HTTP_PARSER_HEADER;
+    return 1;
 }
 
 int

@@ -205,6 +205,7 @@ struct http_cfg {
         } server;
 
         struct {
+            size_t max_reason_phrase_length;
         } client;
     } u;
 
