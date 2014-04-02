@@ -27,6 +27,8 @@
 #include "http.h"
 #include "internal.h"
 
+static void http_client_disconnect(struct http_client *);
+
 struct http_client *
 http_client_new(struct http_cfg *cfg, struct event_base *ev_base) {
     struct http_client *client;
@@ -107,17 +109,23 @@ http_client_new(struct http_cfg *cfg, struct event_base *ev_base) {
             client->sock = -1;
             continue;
         }
+
+        break;
     }
+
+    freeaddrinfo(res);
 
     if (client->sock == -1) {
         http_set_error("cannot connect to %s:%s", cfg->host, cfg->port);
-        freeaddrinfo(res);
         goto error;
     }
 
-    http_client_trace(client, "connected to %s", client->numeric_host_port);
+    client->connection = http_connection_new(HTTP_CONNECTION_CLIENT, client,
+                                             client->sock);
+    if (!client->connection)
+        goto error;
 
-    freeaddrinfo(res);
+    http_client_trace(client, "connected to %s", client->numeric_host_port);
 
     return client;
 
@@ -141,6 +149,29 @@ http_client_delete(struct http_client *client) {
 
     memset(client, 0, sizeof(struct http_client));
     http_free(client);
+}
+
+int
+http_client_send_request(struct http_client *client, enum http_method method,
+                         const struct http_uri *uri) {
+    const char *host;
+
+    host = uri->host;
+
+    if (http_connection_write_request(client->connection, method, uri) == -1)
+        goto error;
+
+    if (http_connection_write_header(client->connection, "Host", host) == -1)
+        goto error;
+
+    if (http_connection_write_empty_body(client->connection) == -1)
+        goto error;
+
+    return 0;
+
+error:
+    http_client_disconnect(client);
+    return -1;
 }
 
 void
@@ -171,4 +202,10 @@ http_client_trace(const struct http_client *client, const char *fmt, ...) {
     va_end(ap);
 
     client->cfg->trace_hook(buf, client->cfg->hook_arg);
+}
+
+static void
+http_client_disconnect(struct http_client *client) {
+    http_connection_close(client->connection);
+    client->connection = NULL;
 }

@@ -25,11 +25,16 @@
 
 static void http_connection_preprocess_request(struct http_connection *,
                                                struct http_msg *);
-static void http_connection_call_msg_handler(struct http_connection *,
-                                             struct http_msg *);
+static void http_connection_preprocess_response(struct http_connection *,
+                                                struct http_msg *);
+static void http_connection_call_request_handler(struct http_connection *,
+                                                 struct http_msg *);
+static void http_connection_call_response_handler(struct http_connection *,
+                                                  struct http_msg *);
 static void http_connection_on_msg_processed(struct http_connection *);
 
-static int http_connection_write_auto_headers(struct http_connection *);
+static int http_connection_write_request_headers(struct http_connection *);
+static int http_connection_write_response_headers(struct http_connection *);
 static int http_connection_write_error_body(struct http_connection *,
                                             enum http_status_code);
 static int http_connection_write_options_response(struct http_connection *,
@@ -38,16 +43,36 @@ static int http_connection_write_405_error(struct http_connection *,
                                            struct http_msg *);
 
 struct http_connection *
-http_connection_setup(struct http_server *server, int sock) {
+http_connection_new(enum http_connection_type type, void *client_or_server,
+                    int sock) {
     struct http_connection *connection;
+    struct event_base *ev_base;
+    struct http_cfg *cfg;
+    enum http_msg_type msg_type;
 
     connection = http_malloc(sizeof(struct http_connection));
     memset(connection, 0, sizeof(struct http_connection));
 
-    connection->server = server;
+    connection->type = type;
+
+    if (type == HTTP_CONNECTION_CLIENT) {
+        connection->client = client_or_server;
+
+        ev_base = connection->client->ev_base;
+        cfg = connection->client->cfg;
+    } else if (type == HTTP_CONNECTION_SERVER) {
+        connection->server = client_or_server;
+
+        ev_base = connection->server->ev_base;
+        cfg = connection->server->cfg;
+    } else {
+        http_set_error("unknown connection type %d", type);
+        goto error;
+    }
+
     connection->sock = sock;
 
-    connection->ev_read = event_new(server->ev_base, connection->sock,
+    connection->ev_read = event_new(ev_base, connection->sock,
                                     EV_READ | EV_PERSIST,
                                     http_connection_on_read_event,
                                     connection);
@@ -62,7 +87,7 @@ http_connection_setup(struct http_server *server, int sock) {
         goto error;
     }
 
-    connection->ev_write = event_new(server->ev_base, connection->sock,
+    connection->ev_write = event_new(ev_base, connection->sock,
                                      EV_WRITE | EV_PERSIST,
                                      http_connection_on_write_event,
                                      connection);
@@ -83,12 +108,15 @@ http_connection_setup(struct http_server *server, int sock) {
         goto error;
     }
 
-    if (http_parser_init(&connection->parser, HTTP_MSG_REQUEST,
-                         server->cfg) == -1) {
-        goto error;
+    if (type == HTTP_CONNECTION_SERVER) {
+        msg_type = HTTP_MSG_REQUEST;
+    } else {
+        msg_type = HTTP_MSG_RESPONSE;
     }
 
-    connection->parser.server = server;
+    if (http_parser_init(&connection->parser, msg_type, cfg) == -1)
+        goto error;
+
     connection->parser.connection = connection;
 
     connection->http_version = HTTP_1_1;
@@ -101,6 +129,15 @@ http_connection_setup(struct http_server *server, int sock) {
 error:
     http_connection_close(connection);
     return NULL;
+}
+
+const struct http_cfg *
+http_connection_get_cfg(const struct http_connection *connection) {
+    if (connection->type == HTTP_CONNECTION_SERVER) {
+        return connection->server->cfg;
+    } else {
+        return connection->client->cfg;
+    }
 }
 
 void
@@ -190,8 +227,10 @@ http_connection_close(struct http_connection *connection) {
         return;
 
     if (connection->sock >= 0) {
-        ht_table_remove(connection->server->connections,
-                        HT_INT32_TO_POINTER(connection->sock));
+        if (connection->type == HTTP_CONNECTION_SERVER) {
+            ht_table_remove(connection->server->connections,
+                            HT_INT32_TO_POINTER(connection->sock));
+        }
 
         close(connection->sock);
         connection->sock = -1;
@@ -237,7 +276,8 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
     ssize_t ret;
 
     connection = arg;
-    cfg = connection->server->cfg;
+
+    cfg = http_connection_get_cfg(connection);
 
     ret = bf_buffer_read(connection->rbuf, connection->sock, BUFSIZ);
     if (ret == -1) {
@@ -262,8 +302,13 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
 
         ret = http_msg_parse(connection->rbuf, parser);
         if (ret == -1) {
-            http_connection_error(connection, "cannot parse request: %s",
-                                  http_get_error());
+            const char *type_str;
+
+            type_str = (connection->type == HTTP_CONNECTION_SERVER)
+                ? "request" : "response";
+
+            http_connection_error(connection, "cannot parse %s: %s",
+                                  type_str, http_get_error());
             http_connection_http_error(connection,
                                        HTTP_INTERNAL_SERVER_ERROR);
             http_connection_shutdown(connection);
@@ -271,7 +316,12 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         }
 
         if (http_parser_are_headers_read(parser) && !parser->msg_preprocessed) {
-            http_connection_preprocess_request(connection, msg);
+            if (connection->type == HTTP_CONNECTION_SERVER) {
+                http_connection_preprocess_request(connection, msg);
+            } else {
+                http_connection_preprocess_response(connection, msg);
+            }
+
             parser->msg_preprocessed = true;
 
             if (!connection->current_msg) {
@@ -293,7 +343,11 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             if (connection->current_msg
              && !http_parser_is_msg_bufferized(parser, msg)
              && msg->body_length > 0) {
-                http_connection_call_msg_handler(connection, msg);
+                if (connection->type == HTTP_CONNECTION_SERVER) {
+                    http_connection_call_request_handler(connection, msg);
+                } else {
+                    http_connection_call_response_handler(connection, msg);
+                }
 
                 http_free(msg->body);
                 msg->body = NULL;
@@ -315,7 +369,12 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             if (cfg->request_hook)
                 cfg->request_hook(connection, msg, cfg->hook_arg);
 
-            http_connection_call_msg_handler(connection, msg);
+            if (connection->type == HTTP_CONNECTION_SERVER) {
+                http_connection_call_request_handler(connection, msg);
+            } else {
+                http_connection_call_response_handler(connection, msg);
+            }
+
             if (!connection->current_msg) {
                 /* The request was fully processed */
                 break;
@@ -365,8 +424,13 @@ http_connection_error(struct http_connection *connection,
     vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
     va_end(ap);
 
-    http_server_error(connection->server, "%s:%s: %s",
-                      connection->host, connection->port, buf);
+    if (connection->type == HTTP_CONNECTION_SERVER) {
+        http_server_error(connection->server, "%s:%s: %s",
+                          connection->host, connection->port, buf);
+    } else {
+        http_client_error(connection->client, "%s:%s: %s",
+                          connection->host, connection->port, buf);
+    }
 }
 
 void
@@ -379,8 +443,37 @@ http_connection_trace(struct http_connection *connection,
     vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
     va_end(ap);
 
-    http_server_trace(connection->server, "%s:%s: %s",
-                      connection->host, connection->port, buf);
+    if (connection->type == HTTP_CONNECTION_SERVER) {
+        http_server_trace(connection->server, "%s:%s: %s",
+                          connection->host, connection->port, buf);
+    } else {
+        http_client_trace(connection->client, "%s: %s",
+                          connection->client->numeric_host_port, buf);
+    }
+}
+
+int
+http_connection_write_request(struct http_connection *connection,
+                              enum http_method method,
+                              const struct http_uri *uri) {
+    const char *version_str, *method_str;
+
+    version_str = http_version_to_string(HTTP_1_1);
+
+    method_str = http_method_to_string(method);
+    if (!method_str) {
+        http_set_error("unknown http method %d", method);
+        return -1;
+    }
+
+    /* TODO encode the path/query/fragment */
+
+    if (http_connection_printf(connection, "%s %s %s\r\n",
+                               method_str, uri->path, version_str) == -1) {
+        return -1;
+    }
+
+    return 0;
 }
 
 int
@@ -447,8 +540,13 @@ http_connection_write_header_size(struct http_connection *connection,
 int
 http_connection_write_body(struct http_connection *connection,
                            const char *buf, size_t sz) {
-    if (http_connection_write_auto_headers(connection) == -1)
-        return -1;
+    if (connection->type == HTTP_CONNECTION_SERVER) {
+        if (http_connection_write_response_headers(connection) == -1)
+            return -1;
+    } else {
+        if (http_connection_write_request_headers(connection) == -1)
+            return -1;
+    }
 
     if (http_connection_write(connection, "\r\n", 2) == -1)
         return -1;
@@ -554,17 +652,28 @@ msg_processed:
 }
 
 static void
-http_connection_call_msg_handler(struct http_connection *connection,
-                                 struct http_msg *msg) {
+http_connection_preprocess_response(struct http_connection *connection,
+                                    struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_RESPONSE);
+    assert(!connection->current_msg);
+
+    connection->current_msg = msg;
+    connection->http_version = msg->version;
+}
+
+static void
+http_connection_call_request_handler(struct http_connection *connection,
+                                     struct http_msg *msg) {
     struct http_route_base *route_base;
     const struct http_route *route;
     enum http_route_match_result match_result;
     enum http_method method;
+    void *arg;
 
     assert(msg->type == HTTP_MSG_REQUEST);
     assert(connection->current_msg);
 
-    if (!connection->current_msg_handler) {
+    if (!connection->current_request_handler) {
         struct http_named_parameter **p_named_parameters;
         size_t *p_nb_named_parameters;
 
@@ -613,23 +722,42 @@ http_connection_call_msg_handler(struct http_connection *connection,
             return;
         }
 
-        connection->current_msg_handler = route->msg_handler;
-        connection->current_msg_handler_arg = route_base->msg_handler_arg;
+        connection->current_request_handler = route->msg_handler;
+        connection->current_request_handler_arg = route_base->msg_handler_arg;
     }
 
-    connection->current_msg_handler(connection, msg,
-                                    connection->current_msg_handler_arg);
+    arg = connection->current_request_handler_arg;
+    connection->current_request_handler(connection, msg, arg);
+}
+
+static void
+http_connection_call_response_handler(struct http_connection *connection,
+                                      struct http_msg *msg) {
+    struct http_cfg *cfg;
+    void *arg;
+
+    assert(msg->type == HTTP_MSG_RESPONSE);
+    assert(connection->current_msg);
+
+    cfg = connection->client->cfg;
+
+    if (!cfg->u.client.response_handler)
+        return;
+
+    arg = cfg->u.client.response_handler_arg;
+    cfg->u.client.response_handler(connection->client, msg, arg);
 }
 
 static void
 http_connection_on_msg_processed(struct http_connection *connection) {
     const struct http_cfg *cfg;
     struct http_msg *msg;
+    enum http_msg_type msg_type;
     bool do_shutdown;
 
     assert(connection->current_msg);
 
-    cfg = connection->server->cfg;
+    cfg = http_connection_get_cfg(connection);
     msg = connection->current_msg;
 
     if (msg->version == HTTP_1_0) {
@@ -648,23 +776,40 @@ http_connection_on_msg_processed(struct http_connection *connection) {
         }
     }
 
-    if (http_parser_reset(&connection->parser, HTTP_MSG_REQUEST, cfg) == -1) {
+    if (connection->type == HTTP_CONNECTION_SERVER) {
+        msg_type = HTTP_MSG_REQUEST;
+    } else {
+        msg_type = HTTP_MSG_RESPONSE;
+    }
+
+    if (http_parser_reset(&connection->parser, msg_type, cfg) == -1) {
         http_connection_error(connection, "cannot reset parser: %s",
                               http_get_error());
         http_connection_close(connection);
         return;
     }
 
-    connection->parser.server = connection->server;
     connection->parser.connection = connection;
 
     connection->current_msg = NULL;
-    connection->current_msg_handler = NULL;
-    connection->current_msg_handler_arg = NULL;
+
+    connection->current_request_handler = NULL;
+    connection->current_request_handler_arg = NULL;
 }
 
 static int
-http_connection_write_auto_headers(struct http_connection *connection) {
+http_connection_write_request_headers(struct http_connection *connection) {
+    const struct http_cfg *cfg;
+
+    cfg = connection->client->cfg;
+
+    /* TODO */
+
+    return 0;
+}
+
+static int
+http_connection_write_response_headers(struct http_connection *connection) {
     const struct http_cfg *cfg;
     char date[HTTP_RFC1123_DATE_BUFSZ];
 

@@ -62,6 +62,16 @@ http_uri_delete(struct http_uri *uri) {
     http_free(uri);
 }
 
+const char *
+http_uri_host(const struct http_uri *uri) {
+    return uri->host;
+}
+
+const char *
+http_uri_port(const struct http_uri *uri) {
+    return uri->port;
+}
+
 static int
 http_uri_parse(const char *str, struct http_uri *uri) {
     const char *ptr, *start, *colon;

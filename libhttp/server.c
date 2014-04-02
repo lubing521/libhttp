@@ -448,7 +448,8 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
         return;
     }
 
-    connection = http_connection_setup(server, client_sock);
+    connection = http_connection_new(HTTP_CONNECTION_SERVER, server,
+                                     client_sock);
     if (!connection) {
         http_server_error(server, "cannot setup connection: %s",
                           http_get_error());

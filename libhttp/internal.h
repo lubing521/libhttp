@@ -169,7 +169,6 @@ struct http_parser {
     enum http_status_code status_code;
     char errmsg[HTTP_ERROR_BUFSZ];
 
-    const struct http_server *server;
     struct http_connection *connection;
     const struct http_cfg *cfg;
 
@@ -200,8 +199,16 @@ int http_msg_parse_body(struct bf_buffer *, struct http_parser *);
 int http_msg_parse_chunk(struct bf_buffer *, struct http_parser *);
 
 /* Connections */
+enum http_connection_type {
+    HTTP_CONNECTION_CLIENT,
+    HTTP_CONNECTION_SERVER,
+};
+
 struct http_connection {
-    struct http_server *server;
+    enum http_connection_type type;
+
+    struct http_server *server; /* if type == HTTP_CONNECTION_SERVER */
+    struct http_client *client; /* if type == HTTP_CONNECTION_CLIENT */
 
     int sock;
 
@@ -223,11 +230,15 @@ struct http_connection {
     uint64_t last_activity;
 
     struct http_msg *current_msg;
-    http_msg_handler current_msg_handler;
-    void *current_msg_handler_arg;
+
+    http_msg_handler current_request_handler;
+    void *current_request_handler_arg;
 };
 
-struct http_connection *http_connection_setup(struct http_server *, int);
+struct http_connection *http_connection_new(enum http_connection_type,
+                                            void *, int);
+
+const struct http_cfg *http_connection_get_cfg(const struct http_connection *);
 
 void http_connection_check_for_timeout(struct http_connection *, uint64_t);
 

@@ -148,6 +148,9 @@ enum http_version http_msg_version(const struct http_msg *);
 enum http_method http_request_method(const struct http_msg *);
 const char *http_request_uri(const struct http_msg *);
 
+enum http_status_code http_response_status_code(const struct http_msg *);
+const char *http_response_reason_phrase(const struct http_msg *);
+
 size_t http_msg_nb_headers(const struct http_msg *);
 const struct http_header *http_msg_header(const struct http_msg *, size_t);
 const char *http_msg_get_header(const struct http_msg *, const char *);
@@ -170,12 +173,17 @@ struct http_form_data;
 const char *http_form_data_get_parameter(struct http_form_data *, const char *);
 
 /* Configuration */
+struct http_client;
+struct http_cfg;
+
 typedef void (*http_error_hook)(const char *, void *);
 typedef void (*http_trace_hook)(const char *, void *);
 typedef void (*http_request_hook)(struct http_connection *,
                                   const struct http_msg *, void *);
 
-struct http_cfg;
+typedef void (*http_response_handler)(struct http_client *,
+                                      const struct http_msg *,
+                                      void *);
 
 typedef void *(*http_content_decode_func)(const struct http_msg *,
                                           const struct http_cfg *);
@@ -206,6 +214,9 @@ struct http_cfg {
 
         struct {
             size_t max_reason_phrase_length;
+
+            http_response_handler response_handler;
+            void *response_handler_arg;
         } client;
     } u;
 
@@ -232,6 +243,13 @@ int http_cfg_content_decoder_add(struct http_cfg *, const char *,
 const struct http_content_decoder *
 http_cfg_content_decoder_get(const struct http_cfg *, const char *);
 
+/* URIs */
+struct http_uri *http_uri_new(const char *);
+void http_uri_delete(struct http_uri *);
+
+const char *http_uri_host(const struct http_uri *);
+const char *http_uri_port(const struct http_uri *);
+
 /* Server */
 typedef void (*http_msg_handler)(struct http_connection *,
                                  const struct http_msg *, void *);
@@ -247,6 +265,9 @@ int http_server_add_route(struct http_server *,
 struct http_client *http_client_new(struct http_cfg *, struct event_base *);
 void http_client_delete(struct http_client *client);
 
+int http_client_send_request(struct http_client *, enum http_method,
+                             const struct http_uri *);
+
 /* Connections */
 void http_connection_close(struct http_connection *);
 int http_connection_shutdown(struct http_connection *);
@@ -254,6 +275,8 @@ int http_connection_shutdown(struct http_connection *);
 int http_connection_http_error(struct http_connection *,
                                enum http_status_code);
 
+int http_connection_write_request(struct http_connection *,
+                                  enum http_method, const struct http_uri *);
 int http_connection_write_response(struct http_connection *,
                                    enum http_status_code, const char *);
 int http_connection_write_header(struct http_connection *,
@@ -263,9 +286,5 @@ int http_connection_write_header_size(struct http_connection *,
 int http_connection_write_body(struct http_connection *,
                                const char *, size_t);
 int http_connection_write_empty_body(struct http_connection *);
-
-/* URIs */
-struct http_uri *http_uri_new(const char *);
-void http_uri_delete(struct http_uri *);
 
 #endif

@@ -136,6 +136,18 @@ http_request_uri(const struct http_msg *msg) {
     return msg->u.request.uri_string;
 }
 
+enum http_status_code
+http_response_status_code(const struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_RESPONSE);
+    return msg->u.response.status_code;
+}
+
+const char *
+http_response_reason_phrase(const struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_RESPONSE);
+    return msg->u.response.reason_phrase;
+}
+
 size_t
 http_msg_nb_headers(const struct http_msg *msg) {
     return msg->nb_headers;
@@ -562,8 +574,11 @@ http_msg_can_have_body(const struct http_msg *msg) {
 
         return method == HTTP_POST || method == HTTP_PUT;
     } else if (msg->type == HTTP_MSG_RESPONSE)  {
-        /* TODO */
-        return false;
+        enum http_status_code status_code;
+
+        status_code = msg->u.response.status_code;
+
+        return status_code >= 200;
     }
 
     return false;
@@ -1535,14 +1550,22 @@ http_msg_process_headers(struct http_parser *parser) {
 
 #define HTTP_HEADER_IS(name_) (strcasecmp(header->name, name_) == 0)
 
-        if (HTTP_HEADER_IS("Host")) {
+        if (msg->type == HTTP_MSG_REQUEST && HTTP_HEADER_IS("Host")) {
+            struct http_server *server;
+
             host = header->value;
 
-            if (parser->server
-             && !http_server_does_listen_on_host_string(parser->server, host)) {
-                HTTP_ERROR(HTTP_BAD_REQUEST,
-                           "Host header '%s' is not a hostname we are "
-                           "listening on", host);
+            if (!parser->connection)
+                goto ignore_header;
+
+            server = parser->connection->server;
+
+            if (server) {
+                if (!http_server_does_listen_on_host_string(server, host)) {
+                    HTTP_ERROR(HTTP_BAD_REQUEST,
+                               "Host header '%s' is not a hostname we are "
+                               "listening on", host);
+                }
             }
         } else if (HTTP_HEADER_IS("Connection")) {
             const char *list, *end;
