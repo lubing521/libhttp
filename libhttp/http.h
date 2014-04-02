@@ -250,6 +250,9 @@ void http_uri_delete(struct http_uri *);
 const char *http_uri_host(const struct http_uri *);
 const char *http_uri_port(const struct http_uri *);
 
+char *http_uri_encode(const struct http_uri *);
+char *http_uri_encode_path_and_query(const struct http_uri *);
+
 /* Server */
 typedef void (*http_msg_handler)(struct http_connection *,
                                  const struct http_msg *, void *);

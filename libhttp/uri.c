@@ -14,6 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <alloca.h>
+#include <ctype.h>
 #include <string.h>
 
 #include "http.h"
@@ -21,6 +23,7 @@
 
 static int http_uri_parse(const char *, struct http_uri *);
 static char *http_uri_decode_component(const char *, size_t);
+static int http_uri_encode_component(const char *, struct bf_buffer *);
 static int http_uri_finalize(struct http_uri *);
 
 static int http_read_hex_digit(unsigned char, int *);
@@ -398,6 +401,193 @@ http_uri_decode_query_component(const char *str, size_t sz) {
 
 error:
     http_free(component);
+    return NULL;
+}
+
+static int
+http_uri_encode_component(const char *str, struct bf_buffer *buf) {
+    const char *hex_digits;
+    const char *iptr;
+    char *optr;
+    char *tmp;
+    size_t len;
+
+    hex_digits = "01234567890abcdef";
+
+    /* Compute the size of the encoded string */
+    len = 0;
+    iptr = str;
+    while (*iptr != '\0') {
+        if (isprint((unsigned char)*iptr)) {
+            len++;
+        } else {
+            len += 3; /* '%xx' */
+        }
+
+        iptr++;
+    }
+
+    if (len > 16 * 1024) {
+        http_set_error("uri component too large");
+        return -1;
+    }
+
+    /* Encode the string */
+    tmp = alloca(len);
+
+    iptr = str;
+    optr = tmp;
+    while (*iptr != '\0') {
+        if (*iptr == ' ') {
+            *optr++ = '+';
+            iptr++;
+        } else if (isprint((unsigned char)*iptr)) {
+            *optr++ = *iptr++;
+        } else {
+            unsigned char c;
+
+            c = (unsigned char)*iptr;
+
+            *optr++ = '%';
+            *optr++ = hex_digits[c >> 4];
+            *optr++ = hex_digits[c & 0xf];
+        }
+    }
+
+    if (bf_buffer_add(buf, tmp, len) == -1) {
+        http_set_error("%s", bf_get_error());
+        return -1;
+    }
+
+    return 0;
+}
+
+char *
+http_uri_encode(const struct http_uri *uri) {
+    struct bf_buffer *buf;
+    char *str;
+
+    if (!uri->host) {
+        http_set_error("uri does not have a host");
+        return NULL;
+    }
+
+    buf = bf_buffer_new(0);
+    if (!buf) {
+        http_set_error("%s", bf_get_error());
+        return NULL;
+    }
+
+    /* Scheme */
+    if (uri->scheme) {
+        if (http_uri_encode_component(uri->scheme, buf) == -1)
+            goto error;
+
+        if (bf_buffer_add_string(buf, "://") == -1)
+            goto error;
+    }
+
+    /* User and password */
+    if (uri->user) {
+        if (http_uri_encode_component(uri->user, buf) == -1)
+            goto error;
+
+        if (uri->password) {
+            if (bf_buffer_add(buf, ":", 1) == -1)
+                goto error;
+
+            if (http_uri_encode_component(uri->password, buf) == -1)
+                goto error;
+        }
+    }
+
+    /* Host and port */
+    if (http_uri_encode_component(uri->host, buf) == -1)
+        goto error;
+
+    if (uri->port) {
+        if (bf_buffer_add(buf, ":", 1) == -1)
+            goto error;
+
+        if (http_uri_encode_component(uri->port, buf) == -1)
+            goto error;
+    }
+
+    /* Path and query */
+    if (uri->path) {
+        if (http_uri_encode_component(uri->path, buf) == -1)
+            goto error;
+    } else {
+        if (bf_buffer_add(buf, "/", 1) == -1)
+            goto error;
+    }
+
+    if (uri->query) {
+        if (bf_buffer_add(buf, "?", 1) == -1)
+            goto error;
+
+        if (http_uri_encode_component(uri->query, buf) == -1)
+            goto error;
+    }
+
+    str = bf_buffer_dup_string(buf);
+    if (!str) {
+        bf_buffer_delete(buf);
+        http_set_error("%s", bf_get_error());
+        return NULL;
+    }
+
+    bf_buffer_delete(buf);
+    return str;
+
+error:
+    bf_buffer_delete(buf);
+    return NULL;
+}
+
+char *
+http_uri_encode_path_and_query(const struct http_uri *uri) {
+    struct bf_buffer *buf;
+    char *str;
+
+    if (!uri->host) {
+        http_set_error("uri does not have a host");
+        return NULL;
+    }
+
+    buf = bf_buffer_new(0);
+    if (!buf) {
+        http_set_error("%s", bf_get_error());
+        return NULL;
+    }
+    if (uri->path) {
+        if (http_uri_encode_component(uri->path, buf) == -1)
+            goto error;
+    } else {
+        if (bf_buffer_add(buf, "/", 1) == -1)
+            goto error;
+    }
+
+    if (uri->query) {
+        if (bf_buffer_add(buf, "?", 1) == -1)
+            goto error;
+
+        if (http_uri_encode_component(uri->query, buf) == -1)
+            goto error;
+    }
+
+    str = bf_buffer_dup_string(buf);
+    if (!str) {
+        bf_buffer_delete(buf);
+        http_set_error("%s", bf_get_error());
+        return NULL;
+    }
+
+    bf_buffer_delete(buf);
+    return str;
+
+error:
+    bf_buffer_delete(buf);
     return NULL;
 }
 

@@ -457,6 +457,7 @@ http_connection_write_request(struct http_connection *connection,
                               enum http_method method,
                               const struct http_uri *uri) {
     const char *version_str, *method_str;
+    char *path;
 
     version_str = http_version_to_string(HTTP_1_1);
 
@@ -466,13 +467,17 @@ http_connection_write_request(struct http_connection *connection,
         return -1;
     }
 
-    /* TODO encode the path/query/fragment */
+    path = http_uri_encode_path_and_query(uri);
+    if (!path)
+        return -1;
 
     if (http_connection_printf(connection, "%s %s %s\r\n",
-                               method_str, uri->path, version_str) == -1) {
+                               method_str, path, version_str) == -1) {
+        http_free(path);
         return -1;
     }
 
+    http_free(path);
     return 0;
 }
 
