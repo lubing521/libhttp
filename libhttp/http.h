@@ -257,8 +257,8 @@ char *http_uri_encode_path_and_query(const struct http_uri *);
 typedef void (*http_msg_handler)(struct http_connection *,
                                  const struct http_msg *, void *);
 
-struct http_server *http_server_listen(struct http_cfg *, struct event_base *);
-void http_server_shutdown(struct http_server *server);
+struct http_server *http_server_new(struct http_cfg *, struct event_base *);
+void http_server_delete(struct http_server *server);
 
 void http_server_set_msg_handler_arg(struct http_server *, void *);
 int http_server_add_route(struct http_server *,
@@ -272,7 +272,7 @@ int http_client_send_request(struct http_client *, enum http_method,
                              const struct http_uri *);
 
 /* Connections */
-void http_connection_close(struct http_connection *);
+void http_connection_delete(struct http_connection *);
 int http_connection_shutdown(struct http_connection *);
 
 int http_connection_http_error(struct http_connection *,

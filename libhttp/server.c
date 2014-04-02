@@ -42,14 +42,14 @@ struct http_listener {
     char numeric_host_port[HTTP_HOST_PORT_BUFSZ];
 };
 
-static struct http_listener *http_listener_setup(struct http_server *,
-                                                 const struct addrinfo *);
-static void http_listener_close(struct http_listener *);
+static struct http_listener *http_listener_new(struct http_server *,
+                                               const struct addrinfo *);
+static void http_listener_delete(struct http_listener *);
 
 static void http_listener_on_sock_event(evutil_socket_t, short, void *);
 
 struct http_server *
-http_server_listen(struct http_cfg *cfg, struct event_base *ev_base) {
+http_server_new(struct http_cfg *cfg, struct event_base *ev_base) {
     struct timeval tv;
     struct http_server *server;
     struct addrinfo hints, *res;
@@ -91,7 +91,7 @@ http_server_listen(struct http_cfg *cfg, struct event_base *ev_base) {
     for (struct addrinfo *ai = res; ai; ai = ai->ai_next) {
         struct http_listener *listener;
 
-        listener = http_listener_setup(server, ai);
+        listener = http_listener_new(server, ai);
         if (!listener) {
             http_server_error(server, "%s", http_get_error());
             continue;
@@ -101,7 +101,7 @@ http_server_listen(struct http_cfg *cfg, struct event_base *ev_base) {
                             HT_INT32_TO_POINTER(listener->sock),
                             listener) == -1) {
             http_server_error(server, "%s", ht_get_error());
-            http_listener_close(listener);
+            http_listener_delete(listener);
             continue;
         }
     }
@@ -134,12 +134,12 @@ http_server_listen(struct http_cfg *cfg, struct event_base *ev_base) {
     return server;
 
 error:
-    http_server_shutdown(server);
+    http_server_delete(server);
     return NULL;
 }
 
 void
-http_server_shutdown(struct http_server *server) {
+http_server_delete(struct http_server *server) {
     struct ht_table_iterator *it;
 
     if (!server)
@@ -155,7 +155,7 @@ http_server_shutdown(struct http_server *server) {
         struct http_connection *connection;
 
         while (ht_table_iterator_get_next(it, NULL, (void **)&connection) == 1)
-            http_connection_close(connection);
+            http_connection_delete(connection);
         ht_table_delete(server->connections);
 
         ht_table_iterator_delete(it);
@@ -166,7 +166,7 @@ http_server_shutdown(struct http_server *server) {
         struct http_listener *listener;
 
         while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1)
-            http_listener_close(listener);
+            http_listener_delete(listener);
         ht_table_delete(server->listeners);
 
         ht_table_iterator_delete(it);
@@ -317,7 +317,7 @@ http_server_on_timeout_timer(evutil_socket_t fd, short events, void *arg) {
 }
 
 static struct http_listener *
-http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
+http_listener_new(struct http_server *server, const struct addrinfo *ai) {
     struct http_listener *listener;
     struct http_cfg *cfg;
     int ret, opt;
@@ -407,12 +407,12 @@ http_listener_setup(struct http_server *server, const struct addrinfo *ai) {
     return listener;
 
 error:
-    http_listener_close(listener);
+    http_listener_delete(listener);
     return NULL;
 }
 
 static void
-http_listener_close(struct http_listener *listener) {
+http_listener_delete(struct http_listener *listener) {
     if (!listener)
         return;
 
@@ -451,7 +451,7 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
     connection = http_connection_new(HTTP_CONNECTION_SERVER, server,
                                      client_sock);
     if (!connection) {
-        http_server_error(server, "cannot setup connection: %s",
+        http_server_error(server, "cannot create connection: %s",
                           http_get_error());
         close(sock);
         return;
@@ -461,7 +461,7 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
                         HT_INT32_TO_POINTER(connection->sock),
                         connection) == -1) {
         http_server_error(server, "%s", ht_get_error());
-        http_connection_close(connection);
+        http_connection_delete(connection);
         return;
     }
 
@@ -472,7 +472,7 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
     if (ret != 0) {
         http_server_error(server, "cannot resolve address: %s",
                           gai_strerror(ret));
-        http_connection_close(connection);
+        http_connection_delete(connection);
         return;
     }
 }

@@ -159,7 +159,7 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
     signal(SIGPIPE, SIG_IGN);
 
     /* Server */
-    https.server = http_server_listen(cfg, https.ev_base);
+    https.server = http_server_new(cfg, https.ev_base);
     if (!https.server)
         https_die("%s", http_get_error());
 
@@ -171,7 +171,7 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
 
 static void
 https_shutdown(void) {
-    http_server_shutdown(https.server);
+    http_server_delete(https.server);
 
     event_free(https.ev_sigint);
     event_free(https.ev_sigterm);

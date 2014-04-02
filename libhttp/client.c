@@ -145,7 +145,7 @@ http_client_delete(struct http_client *client) {
     if (client->ev_sock)
         event_free(client->ev_sock);
 
-    http_connection_close(client->connection);
+    http_connection_delete(client->connection);
 
     memset(client, 0, sizeof(struct http_client));
     http_free(client);
@@ -206,6 +206,6 @@ http_client_trace(const struct http_client *client, const char *fmt, ...) {
 
 static void
 http_client_disconnect(struct http_client *client) {
-    http_connection_close(client->connection);
+    http_connection_delete(client->connection);
     client->connection = NULL;
 }
