@@ -21,6 +21,7 @@
 
 static int http_uri_parse(const char *, struct http_uri *);
 static char *http_uri_decode_component(const char *, size_t);
+static int http_uri_finalize(struct http_uri *);
 
 static int http_read_hex_digit(unsigned char, int *);
 
@@ -338,9 +339,13 @@ path:
             goto error;
     }
 
+    if (http_uri_finalize(uri) == -1)
+        goto error;
+
     return 1;
 
 error:
+    http_uri_delete(uri);
     return -1;
 }
 
@@ -442,6 +447,19 @@ http_uri_decode_component(const char *str, size_t sz) {
 error:
     http_free(component);
     return NULL;
+}
+
+static int
+http_uri_finalize(struct http_uri *uri) {
+    if (!uri->port && uri->scheme) {
+        if (strcasecmp(uri->scheme, "http") == 0) {
+            uri->port = http_strdup("80");
+        } else if (strcasecmp(uri->scheme, "https") == 0) {
+            uri->port = http_strdup("443");
+        }
+    }
+
+    return 0;
 }
 
 static int
