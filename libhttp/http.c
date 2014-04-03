@@ -1737,7 +1737,7 @@ http_msg_finalize_body(struct http_msg *msg, const struct http_cfg *cfg) {
     msg->body[msg->body_length] = '\0';
 
     /* If there is a body and a if a content decoder available, use it */
-    if (msg->body_length > 0 && msg->content_type) {
+    if (msg->content_type) {
         const struct http_content_decoder *decoder;
 
         decoder = http_cfg_content_decoder_get(cfg, msg->content_type);
