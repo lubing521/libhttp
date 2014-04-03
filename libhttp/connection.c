@@ -147,7 +147,7 @@ http_connection_check_for_timeout(struct http_connection *connection,
 
     diff = now - connection->last_activity;
     if (diff > connection->server->cfg->connection_timeout) {
-        http_connection_http_error(connection, HTTP_REQUEST_TIMEOUT);
+        http_connection_write_error(connection, HTTP_REQUEST_TIMEOUT);
         http_connection_shutdown(connection);
     }
 }
@@ -204,8 +204,8 @@ http_connection_printf(struct http_connection *connection,
 }
 
 int
-http_connection_http_error(struct http_connection *connection,
-                           enum http_status_code status_code) {
+http_connection_write_error(struct http_connection *connection,
+                            enum http_status_code status_code) {
 
     if (http_connection_write_response(connection, status_code, NULL) == -1)
         goto error;
@@ -309,8 +309,8 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
 
             http_connection_error(connection, "cannot parse %s: %s",
                                   type_str, http_get_error());
-            http_connection_http_error(connection,
-                                       HTTP_INTERNAL_SERVER_ERROR);
+            http_connection_write_error(connection,
+                                        HTTP_INTERNAL_SERVER_ERROR);
             http_connection_shutdown(connection);
             return;
         }
@@ -360,7 +360,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         if (parser->state == HTTP_PARSER_ERROR) {
             http_connection_error(connection, "cannot parse request: %s",
                                    parser->errmsg);
-            http_connection_http_error(connection, parser->status_code);
+            http_connection_write_error(connection, parser->status_code);
             http_connection_shutdown(connection);
             return;
         } else if (parser->state == HTTP_PARSER_DONE) {
@@ -592,7 +592,7 @@ http_connection_preprocess_request(struct http_connection *connection,
     if (strcmp(uri_string, "*") == 0) {
         if (method != HTTP_OPTIONS) {
             http_connection_trace(connection, "invalid uri: '*'");
-            http_connection_http_error(connection, HTTP_BAD_REQUEST);
+            http_connection_write_error(connection, HTTP_BAD_REQUEST);
             goto msg_processed;
         }
 
@@ -603,7 +603,7 @@ http_connection_preprocess_request(struct http_connection *connection,
         if (!uri) {
             http_connection_trace(connection, "cannot parse uri: %s",
                                   http_get_error());
-            http_connection_http_error(connection, HTTP_BAD_REQUEST);
+            http_connection_write_error(connection, HTTP_BAD_REQUEST);
             goto msg_processed;
         }
 
@@ -618,7 +618,7 @@ http_connection_preprocess_request(struct http_connection *connection,
                 http_connection_trace(connection,
                                       "absolute uri is not associated with an "
                                       "address we are listening on");
-                http_connection_http_error(connection, HTTP_BAD_REQUEST);
+                http_connection_write_error(connection, HTTP_BAD_REQUEST);
                 goto msg_processed;
             }
         }
@@ -637,7 +637,7 @@ http_connection_preprocess_request(struct http_connection *connection,
                                         p_nb_query_parameters) == -1) {
             http_connection_trace(connection, "cannot parse query: %s",
                                   http_get_error());
-            http_connection_http_error(connection, HTTP_BAD_REQUEST);
+            http_connection_write_error(connection, HTTP_BAD_REQUEST);
             goto msg_processed;
         }
     }
@@ -697,7 +697,7 @@ http_connection_call_request_handler(struct http_connection *connection,
                                   "cannot find route for request '%s %s': %s",
                                   http_method_to_string(method),
                                   msg->u.request.uri->path, http_get_error());
-            http_connection_http_error(connection, HTTP_INTERNAL_SERVER_ERROR);
+            http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR);
             http_connection_on_msg_processed(connection);
             return;
         }
@@ -711,12 +711,12 @@ http_connection_call_request_handler(struct http_connection *connection,
                 break;
 
             case HTTP_ROUTE_MATCH_PATH_NOT_FOUND:
-                ret = http_connection_http_error(connection, HTTP_NOT_FOUND);
+                ret = http_connection_write_error(connection, HTTP_NOT_FOUND);
                 break;
 
             case HTTP_ROUTE_MATCH_WRONG_PATH:
             default:
-                ret = http_connection_http_error(connection, HTTP_BAD_REQUEST);
+                ret = http_connection_write_error(connection, HTTP_BAD_REQUEST);
                 break;
             }
 
@@ -891,7 +891,7 @@ http_connection_write_options_response(struct http_connection *connection,
         }
 
         if (nb_methods == 0) {
-            http_connection_http_error(connection, HTTP_NOT_FOUND);
+            http_connection_write_error(connection, HTTP_NOT_FOUND);
             return 0;
         }
 
@@ -939,7 +939,7 @@ http_connection_write_405_error(struct http_connection *connection,
     }
 
     if (nb_methods == 0) {
-        http_connection_http_error(connection, HTTP_NOT_FOUND);
+        http_connection_write_error(connection, HTTP_NOT_FOUND);
         return 0;
     }
 

@@ -279,8 +279,8 @@ int http_client_send_request(struct http_client *, enum http_method,
 void http_connection_delete(struct http_connection *);
 int http_connection_shutdown(struct http_connection *);
 
-int http_connection_http_error(struct http_connection *,
-                               enum http_status_code);
+int http_connection_write_error(struct http_connection *,
+                                enum http_status_code);
 
 int http_connection_write_request(struct http_connection *,
                                   enum http_method, const struct http_uri *);
