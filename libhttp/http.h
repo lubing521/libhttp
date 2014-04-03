@@ -171,6 +171,7 @@ const void *http_msg_content(const struct http_msg *);
 struct http_form_data;
 
 const char *http_form_data_get_parameter(struct http_form_data *, const char *);
+bool http_msg_has_form_data(const struct http_msg *);
 
 /* Configuration */
 struct http_client;

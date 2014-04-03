@@ -242,6 +242,17 @@ http_msg_content(const struct http_msg *msg) {
     return msg->content;
 }
 
+bool
+http_msg_has_form_data(const struct http_msg *msg) {
+    const char *content_type;
+
+    content_type = http_msg_get_header(msg, "Content-Type");
+    if (!content_type)
+        return false;
+
+    return strcmp(content_type, "application/x-www-form-urlencoded") == 0;
+}
+
 char *
 http_decode_header_value(const char *str, size_t sz) {
     char *value;
