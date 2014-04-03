@@ -244,13 +244,11 @@ http_msg_content(const struct http_msg *msg) {
 
 bool
 http_msg_has_form_data(const struct http_msg *msg) {
-    const char *content_type;
-
-    content_type = http_msg_get_header(msg, "Content-Type");
-    if (!content_type)
+    if (!msg->content_type)
         return false;
 
-    return strcmp(content_type, "application/x-www-form-urlencoded") == 0;
+    return strcmp(msg->content_type,
+                  "application/x-www-form-urlencoded") == 0;
 }
 
 char *
