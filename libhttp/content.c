@@ -71,9 +71,10 @@ http_form_data_delete(struct http_form_data *data) {
 }
 
 const char *
-http_form_data_get_parameter(struct http_form_data *data, const char *name) {
+http_form_data_get_parameter(const struct http_form_data *data,
+                             const char *name) {
     for (size_t i = 0; i < data->nb_parameters; i++) {
-        struct http_query_parameter *parameter;
+        const struct http_query_parameter *parameter;
 
         parameter = data->parameters + i;
 
