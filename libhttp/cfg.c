@@ -34,6 +34,7 @@ http_cfg_init(struct http_cfg *cfg) {
 
     cfg->u.server.connection_backlog = 5;
     cfg->u.server.max_request_uri_length = 2048;
+    cfg->u.server.error_body_writer = http_default_error_body_writer;
 
     cfg->u.client.max_reason_phrase_length = 128;
 

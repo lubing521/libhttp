@@ -199,6 +199,53 @@ http_server_add_route(struct http_server *server,
     return 0;
 }
 
+int
+http_default_error_body_writer(struct http_connection *connection,
+                               enum http_status_code status_code,
+                               const char *description) {
+    const char *reason_phrase;
+    char *body;
+    size_t len;
+    int ret;
+
+    reason_phrase = http_status_code_to_reason_phrase(status_code);
+    if (!reason_phrase)
+        reason_phrase = "";
+
+    if (description) {
+        ret = http_asprintf(&body, "<h1>%d %s</h1>\n<p>%s</p>\n",
+                            status_code, reason_phrase, description);
+    } else {
+        ret = http_asprintf(&body, "<h1>%d %s</h1>\n",
+                            status_code, reason_phrase);
+    }
+
+    if (ret == -1)
+        return -1;
+
+    len = (size_t)ret;
+
+    if (http_connection_write_header(connection,
+                                     "Content-Type", "text/html") == -1) {
+        http_free(body);
+        return -1;
+    }
+
+    if (http_connection_write_header_size(connection,
+                                          "Content-Length", len) == -1) {
+        http_free(body);
+        return -1;
+    }
+
+    if (http_connection_write_body(connection, body, len) == -1) {
+        http_free(body);
+        return -1;
+    }
+
+    http_free(body);
+    return 0;
+}
+
 void
 http_server_error(const struct http_server *server, const char *fmt, ...) {
     char buf[HTTP_ERROR_BUFSZ];

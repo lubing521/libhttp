@@ -36,7 +36,8 @@ static void http_connection_on_msg_processed(struct http_connection *);
 static int http_connection_write_request_headers(struct http_connection *);
 static int http_connection_write_response_headers(struct http_connection *);
 static int http_connection_write_error_body(struct http_connection *,
-                                            enum http_status_code);
+                                            enum http_status_code,
+                                            const char *);
 static int http_connection_write_options_response(struct http_connection *,
                                                   struct http_msg *);
 static int http_connection_write_405_error(struct http_connection *,
@@ -147,7 +148,7 @@ http_connection_check_for_timeout(struct http_connection *connection,
 
     diff = now - connection->last_activity;
     if (diff > connection->server->cfg->connection_timeout) {
-        http_connection_write_error(connection, HTTP_REQUEST_TIMEOUT);
+        http_connection_write_error(connection, HTTP_REQUEST_TIMEOUT, NULL);
         http_connection_shutdown(connection);
     }
 }
@@ -205,13 +206,25 @@ http_connection_printf(struct http_connection *connection,
 
 int
 http_connection_write_error(struct http_connection *connection,
-                            enum http_status_code status_code) {
+                            enum http_status_code status_code,
+                            const char *fmt, ...) {
+    char buf[HTTP_ERROR_BUFSZ];
+    const char *errmsg;
+    va_list ap;
+
+    if (fmt) {
+        va_start(ap, fmt);
+        vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
+        va_end(ap);
+    }
 
     if (http_connection_write_response(connection, status_code, NULL) == -1)
         goto error;
 
-    if (http_connection_write_error_body(connection, status_code) == -1)
-        goto error;
+    errmsg = fmt ? buf : NULL;
+
+    if (http_connection_write_error_body(connection, status_code, errmsg) == -1)
+        return -1;
 
     return 0;
 
@@ -309,8 +322,8 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
 
             http_connection_error(connection, "cannot parse %s: %s",
                                   type_str, http_get_error());
-            http_connection_write_error(connection,
-                                        HTTP_INTERNAL_SERVER_ERROR);
+            http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
+                                        NULL);
             http_connection_shutdown(connection);
             return;
         }
@@ -360,7 +373,9 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         if (parser->state == HTTP_PARSER_ERROR) {
             http_connection_error(connection, "cannot parse request: %s",
                                    parser->errmsg);
-            http_connection_write_error(connection, parser->status_code);
+            http_connection_write_error(connection, parser->status_code,
+                                        "cannot parse request: %s",
+                                        parser->errmsg);
             http_connection_shutdown(connection);
             return;
         } else if (parser->state == HTTP_PARSER_DONE) {
@@ -591,8 +606,8 @@ http_connection_preprocess_request(struct http_connection *connection,
     /* URI */
     if (strcmp(uri_string, "*") == 0) {
         if (method != HTTP_OPTIONS) {
-            http_connection_trace(connection, "invalid uri: '*'");
-            http_connection_write_error(connection, HTTP_BAD_REQUEST);
+            http_connection_write_error(connection, HTTP_BAD_REQUEST,
+                                        "invalid uri: '*'");
             goto msg_processed;
         }
 
@@ -601,9 +616,9 @@ http_connection_preprocess_request(struct http_connection *connection,
         /* Absolute URI or absolute path */
         uri = http_uri_new(uri_string);
         if (!uri) {
-            http_connection_trace(connection, "cannot parse uri: %s",
-                                  http_get_error());
-            http_connection_write_error(connection, HTTP_BAD_REQUEST);
+            http_connection_write_error(connection, HTTP_BAD_REQUEST,
+                                        "cannot parse uri: %s",
+                                        http_get_error());
             goto msg_processed;
         }
 
@@ -615,10 +630,10 @@ http_connection_preprocess_request(struct http_connection *connection,
         if (uri->host) {
             if (!http_server_does_listen_on(connection->server,
                                             uri->host, uri->port)) {
-                http_connection_trace(connection,
-                                      "absolute uri is not associated with an "
-                                      "address we are listening on");
-                http_connection_write_error(connection, HTTP_BAD_REQUEST);
+                http_connection_write_error(connection, HTTP_BAD_REQUEST,
+                                            "absolute uri is not associated "
+                                            "with an address we are "
+                                            "listening on");
                 goto msg_processed;
             }
         }
@@ -635,9 +650,9 @@ http_connection_preprocess_request(struct http_connection *connection,
         if (http_query_parameters_parse(uri->query,
                                         p_query_parameters,
                                         p_nb_query_parameters) == -1) {
-            http_connection_trace(connection, "cannot parse query: %s",
-                                  http_get_error());
-            http_connection_write_error(connection, HTTP_BAD_REQUEST);
+            http_connection_write_error(connection, HTTP_BAD_REQUEST,
+                                        "cannot parse query: %s",
+                                        http_get_error());
             goto msg_processed;
         }
     }
@@ -693,11 +708,9 @@ http_connection_call_request_handler(struct http_connection *connection,
                                        &route, &match_result,
                                        p_named_parameters,
                                        p_nb_named_parameters) == -1) {
-            http_connection_error(connection,
-                                  "cannot find route for request '%s %s': %s",
-                                  http_method_to_string(method),
-                                  msg->u.request.uri->path, http_get_error());
-            http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR);
+            http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
+                                        "cannot find route: %s",
+                                        http_get_error());
             http_connection_on_msg_processed(connection);
             return;
         }
@@ -711,12 +724,14 @@ http_connection_call_request_handler(struct http_connection *connection,
                 break;
 
             case HTTP_ROUTE_MATCH_PATH_NOT_FOUND:
-                ret = http_connection_write_error(connection, HTTP_NOT_FOUND);
+                ret = http_connection_write_error(connection, HTTP_NOT_FOUND,
+                                                  NULL);
                 break;
 
             case HTTP_ROUTE_MATCH_WRONG_PATH:
             default:
-                ret = http_connection_write_error(connection, HTTP_BAD_REQUEST);
+                ret = http_connection_write_error(connection, HTTP_BAD_REQUEST,
+                                                  "cannot parse path");
                 break;
             }
 
@@ -833,35 +848,20 @@ http_connection_write_response_headers(struct http_connection *connection) {
 
 static int
 http_connection_write_error_body(struct http_connection *connection,
-                                 enum http_status_code status_code) {
-    const char *reason_phrase;
-    char body[1024];
-    size_t body_len;
+                                 enum http_status_code status_code,
+                                 const char *errmsg) {
+    const struct http_cfg *cfg;
 
-    reason_phrase = http_status_code_to_reason_phrase(status_code);
-    snprintf(body, sizeof(body), "<h1>%d %s</h1>\n",
-             status_code, reason_phrase);
-    body_len = strlen(body);
+    cfg = http_connection_get_cfg(connection);
 
-    if (http_connection_write_header(connection,
-                                     "Content-Type", "text/html") == -1) {
-        goto error;
+    if (cfg->u.server.error_body_writer(connection, status_code,
+                                        errmsg) == -1) {
+        http_connection_error(connection, "%s", http_get_error());
+        http_connection_delete(connection);
+        return -1;
     }
-
-    if (http_connection_write_header_size(connection,
-                                          "Content-Length", body_len) == -1) {
-        goto error;
-    }
-
-    if (http_connection_write_body(connection, body, body_len) == -1)
-        goto error;
 
     return 0;
-
-error:
-    http_connection_error(connection, "%s", http_get_error());
-    http_connection_delete(connection);
-    return -1;
 }
 
 static int
@@ -891,7 +891,7 @@ http_connection_write_options_response(struct http_connection *connection,
         }
 
         if (nb_methods == 0) {
-            http_connection_write_error(connection, HTTP_NOT_FOUND);
+            http_connection_write_error(connection, HTTP_NOT_FOUND, NULL);
             return 0;
         }
 
@@ -939,7 +939,7 @@ http_connection_write_405_error(struct http_connection *connection,
     }
 
     if (nb_methods == 0) {
-        http_connection_write_error(connection, HTTP_NOT_FOUND);
+        http_connection_write_error(connection, HTTP_NOT_FOUND, NULL);
         return 0;
     }
 
@@ -961,9 +961,10 @@ http_connection_write_405_error(struct http_connection *connection,
         }
     }
 
-    if (http_connection_write_error_body(connection,
-                                         HTTP_METHOD_NOT_ALLOWED) == -1) {
-        return -1;
+    if (http_connection_write_error_body(connection, HTTP_METHOD_NOT_ALLOWED,
+                                         NULL) == -1) {
+        http_connection_error(connection, "cannot write error body: %s",
+                              http_get_error());
     }
 
     return 0;

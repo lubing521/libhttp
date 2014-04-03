@@ -45,6 +45,10 @@ void http_free(void *);
 char *http_strdup(const char *);
 char *http_strndup(const char *, size_t);
 
+int http_vasprintf(char **, const char *, va_list);
+int http_asprintf(char **, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+
 int http_parse_size(const char *, size_t *);
 
 char *http_iconv(const char *, const char *, const char *);

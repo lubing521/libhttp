@@ -182,6 +182,10 @@ struct http_cfg;
 
 typedef void (*http_error_hook)(const char *, void *);
 typedef void (*http_trace_hook)(const char *, void *);
+
+typedef int (*http_error_body_writer)(struct http_connection *,
+                                      enum http_status_code, const char *);
+
 typedef void (*http_request_hook)(struct http_connection *,
                                   const struct http_msg *, void *);
 
@@ -214,6 +218,8 @@ struct http_cfg {
             int connection_backlog;
 
             size_t max_request_uri_length;
+
+            http_error_body_writer error_body_writer;
         } server;
 
         struct {
@@ -268,6 +274,9 @@ void http_server_set_msg_handler_arg(struct http_server *, void *);
 int http_server_add_route(struct http_server *,
                           enum http_method, const char *, http_msg_handler);
 
+int http_default_error_body_writer(struct http_connection *,
+                                   enum http_status_code, const char *);
+
 /* Client */
 struct http_client *http_client_new(struct http_cfg *, struct event_base *);
 void http_client_delete(struct http_client *client);
@@ -280,7 +289,8 @@ void http_connection_delete(struct http_connection *);
 int http_connection_shutdown(struct http_connection *);
 
 int http_connection_write_error(struct http_connection *,
-                                enum http_status_code);
+                                enum http_status_code,
+                                const char *, ...);
 
 int http_connection_write_request(struct http_connection *,
                                   enum http_method, const struct http_uri *);

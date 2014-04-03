@@ -16,6 +16,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <string.h>
 
 #include "http.h"
@@ -35,6 +36,50 @@ http_strndup(const char *str, size_t len) {
     nstr[len] = '\0';
 
     return nstr;
+}
+
+int
+http_vasprintf(char **pstr, const char *fmt, va_list ap) {
+    struct bf_buffer *buf;
+    int len;
+
+    buf = bf_buffer_new(0);
+
+    if (bf_buffer_add_vprintf(buf, fmt, ap) == -1) {
+        bf_buffer_delete(buf);
+        http_set_error("%s", bf_get_error());
+        return -1;
+    }
+
+    if (bf_buffer_length(buf) > INT_MAX) {
+        bf_buffer_delete(buf);
+        http_set_error("formatted string too large");
+        return -1;
+    }
+
+    len = (int)bf_buffer_length(buf);
+
+    *pstr = bf_buffer_dup_string(buf);
+    if (!*pstr) {
+        bf_buffer_delete(buf);
+        http_set_error("%s", bf_get_error());
+        return -1;
+    }
+
+    bf_buffer_delete(buf);
+    return len;
+}
+
+int
+http_asprintf(char **pstr, const char *fmt, ...) {
+    va_list ap;
+    int ret;
+
+    va_start(ap, fmt);
+    ret = http_vasprintf(pstr, fmt, ap);
+    va_end(ap);
+
+    return ret;
 }
 
 int
