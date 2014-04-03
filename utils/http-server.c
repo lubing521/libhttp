@@ -56,6 +56,10 @@ static void https_foo_post(struct http_connection *, const struct http_msg *,
                            void *);
 static void https_foo_bar_get(struct http_connection *,
                               const struct http_msg *, void *);
+static void https_upload_buffered_post(struct http_connection *,
+                                       const struct http_msg *, void *);
+static void https_upload_unbuffered_post(struct http_connection *,
+                                         const struct http_msg *, void *);
 
 int
 main(int argc, char **argv) {
@@ -135,6 +139,8 @@ https_die(const char *fmt, ...) {
 
 static void
 https_initialize(struct http_cfg *cfg) {
+    struct http_route_options options;
+
     https.ev_base = event_base_new();
     if (!https.ev_base)
         https_die("cannot create event base: %s", strerror(errno));
@@ -162,10 +168,22 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
     if (!https.server)
         https_die("%s", http_get_error());
 
-    http_server_add_route(https.server, HTTP_GET, "/foo", https_foo_get);
-    http_server_add_route(https.server, HTTP_POST, "/foo", https_foo_post);
+    http_server_add_route(https.server, HTTP_GET, "/foo",
+                          https_foo_get, NULL);
+    http_server_add_route(https.server, HTTP_POST, "/foo",
+                          https_foo_post, NULL);
     http_server_add_route(https.server, HTTP_GET, "/foo/bar",
-                          https_foo_bar_get);
+                          https_foo_bar_get, NULL);
+
+    memset(&options, 0, sizeof(struct http_route_options));
+
+    options.bufferization = HTTP_BUFFERIZE_ALWAYS;
+    http_server_add_route(https.server, HTTP_POST, "/upload/buffered",
+                          https_upload_buffered_post, &options);
+
+    options.bufferization = HTTP_BUFFERIZE_NEVER;
+    http_server_add_route(https.server, HTTP_POST, "/upload/unbuffered",
+                          https_upload_unbuffered_post, &options);
 }
 
 static void
@@ -274,4 +292,50 @@ https_foo_bar_get(struct http_connection *connection,
     http_connection_write_header(connection, "Content-Type", "text/plain");
     http_connection_write_header_size(connection, "Content-Length", body_len);
     http_connection_write_body(connection, body, body_len);
+}
+
+static void
+https_upload_buffered_post(struct http_connection *connection,
+                           const struct http_msg *msg, void *arg) {
+    char body[128];
+    size_t body_len;
+
+    printf("/upload/buffered: %zu bytes received\n",
+           http_msg_body_length(msg));
+
+    snprintf(body, sizeof(body), "%zu bytes received\n",
+             http_msg_body_length(msg));
+    body_len = strlen(body);
+
+    http_connection_write_response(connection, HTTP_OK, NULL);
+    http_connection_write_header(connection, "Content-Type", "text/plain");
+    http_connection_write_header_size(connection, "Content-Length", body_len);
+    http_connection_write_body(connection, body, body_len);
+}
+
+static void
+https_upload_unbuffered_post(struct http_connection *connection,
+                             const struct http_msg *msg, void *arg) {
+    static size_t content_len = 0;
+
+    char body[128];
+    size_t body_len;
+
+    content_len += http_msg_body_length(msg);
+
+    printf("/upload/unbuffered: %zu bytes received (total: %zu)\n",
+           http_msg_body_length(msg), content_len);
+
+    if (!http_msg_is_complete(msg))
+        return;
+
+    snprintf(body, sizeof(body), "%zu bytes received\n", content_len);
+    body_len = strlen(body);
+
+    http_connection_write_response(connection, HTTP_OK, NULL);
+    http_connection_write_header(connection, "Content-Type", "text/plain");
+    http_connection_write_header_size(connection, "Content-Length", body_len);
+    http_connection_write_body(connection, body, body_len);
+
+    content_len = 0;
 }

@@ -339,8 +339,8 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
              * was not entirely read). */
 
             if (connection->current_msg
-             && !http_parser_is_msg_bufferized(parser, msg)
-             && msg->body_length > 0) {
+             && http_parser_are_headers_read(parser)
+             && !msg->is_bufferized && msg->body_length > 0) {
                 if (connection->type == HTTP_CONNECTION_SERVER) {
                     http_connection_call_request_handler(connection, msg);
                 } else {
@@ -366,14 +366,14 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         } else if (parser->state == HTTP_PARSER_DONE) {
             msg->is_complete = true;
 
-            if (cfg->request_hook)
-                cfg->request_hook(connection, msg, cfg->hook_arg);
-
             if (connection->type == HTTP_CONNECTION_SERVER) {
                 http_connection_call_request_handler(connection, msg);
             } else {
                 http_connection_call_response_handler(connection, msg);
             }
+
+            if (cfg->request_hook)
+                cfg->request_hook(connection, msg, cfg->hook_arg);
 
             if (!connection->current_msg) {
                 /* The request was fully processed */
@@ -573,6 +573,10 @@ http_connection_write_empty_body(struct http_connection *connection) {
 static void
 http_connection_preprocess_request(struct http_connection *connection,
                                    struct http_msg *msg) {
+    struct http_route_base *route_base;
+    const struct http_route *route;
+    enum http_route_match_result match_result;
+
     const char *uri_string;
     struct http_uri *uri;
     enum http_method method;
@@ -650,6 +654,54 @@ http_connection_preprocess_request(struct http_connection *connection,
         goto msg_processed;
     }
 
+    /* Find a request handler */
+    route_base = connection->server->route_base;
+
+    if (http_route_base_find_route(route_base,
+                                   method, msg->u.request.uri->path,
+                                   &route, &match_result,
+                                   &msg->u.request.named_parameters,
+                                   &msg->u.request.nb_named_parameters) == -1) {
+        http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
+                                    "cannot find route: %s",
+                                    http_get_error());
+        goto msg_processed;
+    }
+
+    if (!route) {
+        int ret;
+
+        switch (match_result) {
+        case HTTP_ROUTE_MATCH_METHOD_NOT_FOUND:
+            ret = http_connection_write_405_error(connection, msg);
+            break;
+
+        case HTTP_ROUTE_MATCH_PATH_NOT_FOUND:
+            ret = http_connection_write_error(connection, HTTP_NOT_FOUND,
+                                              NULL);
+            break;
+
+        case HTTP_ROUTE_MATCH_WRONG_PATH:
+        default:
+            ret = http_connection_write_error(connection, HTTP_BAD_REQUEST,
+                                              "cannot parse path");
+            break;
+        }
+
+        if (ret == -1)
+            return;
+
+        goto msg_processed;
+    }
+
+    connection->current_request_handler = route->msg_handler;
+    connection->current_request_handler_arg = route_base->msg_handler_arg;
+
+    /* Is the request bufferized ? */
+    msg->is_bufferized = route->bufferization == HTTP_BUFFERIZE_ALWAYS
+                      || (route->bufferization == HTTP_BUFFERIZE_AUTO
+                          && msg->is_body_chunked);
+
     return;
 
 msg_processed:
@@ -669,67 +721,11 @@ http_connection_preprocess_response(struct http_connection *connection,
 static void
 http_connection_call_request_handler(struct http_connection *connection,
                                      struct http_msg *msg) {
-    struct http_route_base *route_base;
-    const struct http_route *route;
-    enum http_route_match_result match_result;
-    enum http_method method;
     void *arg;
 
     assert(msg->type == HTTP_MSG_REQUEST);
     assert(connection->current_msg);
-
-    if (!connection->current_request_handler) {
-        struct http_named_parameter **p_named_parameters;
-        size_t *p_nb_named_parameters;
-
-        route_base = connection->server->route_base;
-        method = connection->current_msg->u.request.method;
-
-        p_named_parameters = &msg->u.request.named_parameters;
-        p_nb_named_parameters = &msg->u.request.nb_named_parameters;
-
-        if (http_route_base_find_route(route_base,
-                                       method, msg->u.request.uri->path,
-                                       &route, &match_result,
-                                       p_named_parameters,
-                                       p_nb_named_parameters) == -1) {
-            http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
-                                        "cannot find route: %s",
-                                        http_get_error());
-            http_connection_on_msg_processed(connection);
-            return;
-        }
-
-        if (!route) {
-            int ret;
-
-            switch (match_result) {
-            case HTTP_ROUTE_MATCH_METHOD_NOT_FOUND:
-                ret = http_connection_write_405_error(connection, msg);
-                break;
-
-            case HTTP_ROUTE_MATCH_PATH_NOT_FOUND:
-                ret = http_connection_write_error(connection, HTTP_NOT_FOUND,
-                                                  NULL);
-                break;
-
-            case HTTP_ROUTE_MATCH_WRONG_PATH:
-            default:
-                ret = http_connection_write_error(connection, HTTP_BAD_REQUEST,
-                                                  "cannot parse path");
-                break;
-            }
-
-            if (ret == -1)
-                return;
-
-            http_connection_on_msg_processed(connection);
-            return;
-        }
-
-        connection->current_request_handler = route->msg_handler;
-        connection->current_request_handler_arg = route_base->msg_handler_arg;
-    }
+    assert(connection->current_request_handler);
 
     arg = connection->current_request_handler_arg;
     connection->current_request_handler(connection, msg, arg);

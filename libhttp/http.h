@@ -264,6 +264,10 @@ char *http_uri_encode(const struct http_uri *);
 char *http_uri_encode_path_and_query(const struct http_uri *);
 
 /* Server */
+struct http_route_options {
+    enum http_bufferization bufferization;
+};
+
 typedef void (*http_msg_handler)(struct http_connection *,
                                  const struct http_msg *, void *);
 
@@ -272,7 +276,8 @@ void http_server_delete(struct http_server *server);
 
 void http_server_set_msg_handler_arg(struct http_server *, void *);
 int http_server_add_route(struct http_server *,
-                          enum http_method, const char *, http_msg_handler);
+                          enum http_method, const char *, http_msg_handler,
+                          const struct http_route_options *);
 
 int http_default_error_body_writer(struct http_connection *,
                                    enum http_status_code, const char *);

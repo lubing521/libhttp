@@ -122,6 +122,7 @@ struct http_msg {
     size_t nb_headers;
     size_t headers_sz;
 
+    bool is_bufferized;
     bool is_complete;
 
     char *body;
@@ -189,7 +190,6 @@ int http_parser_reset(struct http_parser *, enum http_msg_type,
                       const struct http_cfg *);
 
 bool http_parser_are_headers_read(struct http_parser *);
-bool http_parser_is_msg_bufferized(struct http_parser *, struct http_msg *);
 
 void http_parser_fail(struct http_parser *, enum http_status_code,
                       const char *, ...)
@@ -289,11 +289,17 @@ struct http_route {
     size_t nb_components;
 
     http_msg_handler msg_handler;
+
+    enum http_bufferization bufferization;
 };
 
 struct http_route *http_route_new(enum http_method, const char *,
                                   http_msg_handler);
 void http_route_delete(struct http_route *);
+
+void http_route_apply_options(struct http_route *,
+                              const struct http_route_options *,
+                              const struct http_cfg *);
 
 struct http_route_base {
     struct http_route **routes;

@@ -175,13 +175,15 @@ http_server_set_msg_handler_arg(struct http_server *server, void *arg) {
 int
 http_server_add_route(struct http_server *server,
                       enum http_method method, const char *path,
-                      http_msg_handler msg_handler) {
+                      http_msg_handler msg_handler,
+                      const struct http_route_options *options) {
     struct http_route *route;
 
     route = http_route_new(method, path, msg_handler);
     if (!route)
         return -1;
 
+    http_route_apply_options(route, options, server->cfg);
     http_route_base_add_route(server->route_base, route);
     return 0;
 }

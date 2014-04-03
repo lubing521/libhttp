@@ -786,20 +786,6 @@ http_parser_are_headers_read(struct http_parser *parser) {
     }
 }
 
-bool
-http_parser_is_msg_bufferized(struct http_parser *parser,
-                              struct http_msg *msg) {
-    enum http_bufferization bufferization;
-
-    bufferization = parser->cfg->bufferization;
-
-    if (!http_parser_are_headers_read(parser))
-        return false;
-
-    return bufferization == HTTP_BUFFERIZE_ALWAYS
-        || (bufferization == HTTP_BUFFERIZE_AUTO && msg->is_body_chunked);
-}
-
 void
 http_parser_fail(struct http_parser *parser, enum http_status_code status_code,
                  const char *fmt, ...) {
@@ -1356,7 +1342,7 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
     if (!msg->has_content_length)
         HTTP_ERROR(HTTP_LENGTH_REQUIRED, "missing Content-Length header");
 
-    if (http_parser_is_msg_bufferized(parser, msg)) {
+    if (msg->is_bufferized) {
         if (len < msg->content_length)
             return 0;
 
@@ -1477,13 +1463,10 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
 
     /* Chunk data */
     if (chunk_length > 0) {
-        bool bufferized;
-
         if (len < chunk_length + 2)
             return 0;
 
-        bufferized = http_parser_is_msg_bufferized(parser, msg);
-        if (!bufferized && msg->body_length > 0) {
+        if (!msg->is_bufferized && msg->body_length > 0) {
             http_free(msg->body);
             msg->body_length = 0;
         }

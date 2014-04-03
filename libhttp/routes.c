@@ -181,6 +181,17 @@ http_route_delete(struct http_route *route) {
     http_free(route);
 }
 
+void
+http_route_apply_options(struct http_route *route,
+                         const struct http_route_options *options,
+                         const struct http_cfg *cfg) {
+    if (options) {
+        route->bufferization = options->bufferization;
+    } else {
+        route->bufferization = cfg->bufferization;
+    }
+}
+
 struct http_route_base *
 http_route_base_new(void) {
     struct http_route_base *base;
