@@ -98,18 +98,12 @@ http_route_components_parse(const char *path,
             if (nb_components == 0) {
                 components_sz = 1;
                 components = http_malloc(sizeof(struct http_route_component));
-                if (!components)
-                    goto error;
             } else if (nb_components + 1 > components_sz) {
-                struct http_route_component *ncomponents;
                 size_t nsz;
 
                 components_sz *= 2;
                 nsz = components_sz * sizeof(struct http_route_component);
-                ncomponents = http_realloc(components, nsz);
-                if (!ncomponents)
-                    goto error;
-                components = ncomponents;
+                components = http_realloc(components, nsz);
             }
 
             components[nb_components++] = component;
@@ -159,8 +153,6 @@ http_route_new(enum http_method method, const char *path,
     struct http_route *route;
 
     route = http_malloc(sizeof(struct http_route));
-    if (!route)
-        return NULL;
     memset(route, 0, sizeof(struct http_route));
 
     route->method = method;
@@ -194,8 +186,6 @@ http_route_base_new(void) {
     struct http_route_base *base;
 
     base = http_malloc(sizeof(struct http_route_base));
-    if (!base)
-        return NULL;
     memset(base, 0, sizeof(struct http_route_base));
 
     base->sorted = true;
@@ -216,36 +206,26 @@ http_route_base_delete(struct http_route_base *base) {
     http_free(base);
 }
 
-int
+void
 http_route_base_add_route(struct http_route_base *base,
                           struct http_route *route) {
-    struct http_route **routes;
-    size_t routes_sz;
-
-    if (*route->path != '/') {
-        http_set_error("path is not absolute");
-        return -1;
-    }
+    assert(*route->path == '/');
 
     if (base->nb_routes == 0) {
-        routes_sz = 1;
-        routes = http_malloc(sizeof(struct http_route *));
+        base->routes_sz = 1;
+        base->routes = http_malloc(sizeof(struct http_route *));
     } else {
-        routes_sz = base->routes_sz * 2;
-        routes = http_realloc(base->routes,
-                              routes_sz * sizeof(struct http_route *));
+        size_t nsz;
+
+        base->routes_sz *= 2;
+
+        nsz = base->routes_sz * sizeof(struct http_route *);
+        base->routes = http_realloc(base->routes, nsz);
     }
-
-    if (!routes)
-        return -1;
-
-    base->routes = routes;
-    base->routes_sz = routes_sz;
 
     base->routes[base->nb_routes++] = route;
 
     base->sorted = false;
-    return 0;
 }
 
 int
@@ -320,8 +300,6 @@ http_route_base_find_route(struct http_route_base *base,
     if (p_named_parameters && nb_named_parameters > 0) {
         named_parameters = http_calloc(nb_named_parameters,
                                        sizeof(struct http_named_parameter));
-        if (!named_parameters)
-            return -1;
 
         idx = 0;
         for (size_t i = 0; i < route->nb_components; i++) {
@@ -502,8 +480,6 @@ http_path_parse(const char *path, char ***pcomponents, size_t *p_nb_components) 
     }
 
     components = http_calloc(nb_components, sizeof(char *));
-    if (!components)
-        return -1;
 
     /* Copy the components */
     ptr = path;

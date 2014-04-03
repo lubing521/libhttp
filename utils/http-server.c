@@ -85,8 +85,7 @@ main(int argc, char **argv) {
         }
     }
 
-    if (http_cfg_init(&cfg) == -1)
-        https_die("cannot initialize configuration: %s", http_get_error());
+    http_cfg_init(&cfg);
 
     cfg.port = "8080";
     cfg.error_hook = https_on_error;

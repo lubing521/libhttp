@@ -19,15 +19,13 @@
 #include "http.h"
 #include "internal.h"
 
-int
+void
 http_cfg_init(struct http_cfg *cfg) {
     memset(cfg, 0, sizeof(struct http_cfg));
 
-    if (http_cfg_content_decoder_add(cfg, "application/x-www-form-urlencoded",
+    http_cfg_content_decoder_add(cfg, "application/x-www-form-urlencoded",
                                      http_content_form_data_decode,
-                                     http_content_form_data_delete) == -1) {
-        goto error;
-    }
+                                     http_content_form_data_delete);
 
     cfg->host = "localhost";
     cfg->port = "80";
@@ -47,12 +45,6 @@ http_cfg_init(struct http_cfg *cfg) {
     cfg->bufferization = HTTP_BUFFERIZE_AUTO;
 
     cfg->connection_timeout = 10000;
-
-    return 0;
-
-error:
-    http_cfg_free(cfg);
-    return -1;
 }
 
 void
@@ -62,36 +54,29 @@ http_cfg_free(struct http_cfg *cfg) {
     memset(cfg, 0, sizeof(struct http_cfg));
 }
 
-int
+void
 http_cfg_content_decoder_add(struct http_cfg *cfg, const char *content_type,
                              http_content_decode_func decode,
                              http_content_delete_func delete) {
-    struct http_content_decoder *decoders, *decoder;
-    size_t nb_content_decoders;
+    struct http_content_decoder *decoder;
 
     if (cfg->nb_content_decoders == 0) {
-        nb_content_decoders = 1;
-        decoders = http_malloc(sizeof(struct http_content_decoder));
+        cfg->content_decoders = http_malloc(sizeof(struct http_content_decoder));
     } else {
         size_t nsz;
 
-        nb_content_decoders = cfg->nb_content_decoders + 1;
-        nsz = nb_content_decoders * sizeof(struct http_content_decoder);
-        decoders = http_realloc(cfg->content_decoders, nsz);
+        nsz = (cfg->nb_content_decoders + 1)
+            * sizeof(struct http_content_decoder);
+        cfg->content_decoders = http_realloc(cfg->content_decoders, nsz);
     }
 
-    if (!decoders)
-        return -1;
-
-    cfg->content_decoders = decoders;
-
     decoder = cfg->content_decoders + cfg->nb_content_decoders;
+
     decoder->content_type = content_type;
     decoder->decode = decode;
     decoder->delete = delete;
 
-    cfg->nb_content_decoders = nb_content_decoders;
-    return 0;
+    cfg->nb_content_decoders++;
 }
 
 const struct http_content_decoder *

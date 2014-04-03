@@ -38,8 +38,6 @@ http_uri_new(const char *str) {
     struct http_uri *uri;
 
     uri = http_malloc(sizeof(struct http_uri));
-    if (!uri)
-        return NULL;
 
     if (http_uri_parse(str, uri) == -1) {
         http_uri_delete(uri);
@@ -376,8 +374,6 @@ http_uri_decode_query_component(const char *str, size_t sz) {
 
     str_length = strlen(str);
     component = http_malloc(str_length + 1);
-    if (!component)
-        return NULL;
 
     iptr = str;
     ilen = sz;
@@ -470,11 +466,7 @@ http_uri_encode_component(const char *str, struct bf_buffer *buf) {
         }
     }
 
-    if (bf_buffer_add(buf, tmp, len) == -1) {
-        http_set_error("%s", bf_get_error());
-        return -1;
-    }
-
+    bf_buffer_add(buf, tmp, len);
     return 0;
 }
 
@@ -489,10 +481,6 @@ http_uri_encode(const struct http_uri *uri) {
     }
 
     buf = bf_buffer_new(0);
-    if (!buf) {
-        http_set_error("%s", bf_get_error());
-        return NULL;
-    }
 
     /* Scheme */
     if (uri->scheme) {
@@ -631,8 +619,6 @@ http_uri_decode_component(const char *str, size_t sz) {
 
     str_length = strlen(str);
     component = http_malloc(str_length + 1);
-    if (!component)
-        return NULL;
 
     iptr = str;
     ilen = sz;

@@ -43,9 +43,6 @@ http_form_data_new(const char *string) {
     struct http_form_data *data;
 
     data = http_malloc(sizeof(struct http_form_data));
-    if (!data)
-        return NULL;
-
     memset(data, 0, sizeof(struct http_form_data));
 
     if (http_query_parameters_parse(string, &data->parameters,

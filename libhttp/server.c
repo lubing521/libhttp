@@ -63,16 +63,7 @@ http_server_new(struct http_cfg *cfg, struct event_base *ev_base) {
     server->ev_base = ev_base;
 
     server->listeners = ht_table_new(ht_hash_int32, ht_equal_int32);
-    if (!server->listeners) {
-        http_set_error("%s", ht_get_error());
-        goto error;
-    }
-
     server->connections = ht_table_new(ht_hash_int32, ht_equal_int32);
-    if (!server->connections) {
-        http_set_error("%s", ht_get_error());
-        goto error;
-    }
 
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_flags = 0;
@@ -191,11 +182,7 @@ http_server_add_route(struct http_server *server,
     if (!route)
         return -1;
 
-    if (http_route_base_add_route(server->route_base, route) == -1) {
-        http_route_delete(route);
-        return -1;
-    }
-
+    http_route_base_add_route(server->route_base, route);
     return 0;
 }
 
@@ -370,9 +357,6 @@ http_listener_new(struct http_server *server, const struct addrinfo *ai) {
     int ret, opt;
 
     listener = http_malloc(sizeof(struct http_listener));
-    if (!listener)
-        return NULL;
-
     memset(listener, 0, sizeof(struct http_listener));
 
     listener->server = server;

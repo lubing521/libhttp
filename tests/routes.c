@@ -119,15 +119,7 @@ main(int argc, char **argv) {
                                                                   \
         route = http_route_new(method_, path_,                    \
                                (http_msg_handler)handler_);       \
-        if (!route) {                                             \
-            HTTPT_DIE("%s:%d: cannot create route: %s",           \
-                      __FILE__, __LINE__, http_get_error());      \
-        }                                                         \
-                                                                  \
-        if (http_route_base_add_route(route_base, route) == -1) { \
-            HTTPT_DIE("%s:%d: cannot add route: %s",              \
-                      __FILE__, __LINE__, http_get_error());      \
-        }                                                         \
+        http_route_base_add_route(route_base, route);             \
     } while (0)
 
 #define HTTPT_ROUTE_HANDLER_IS_FOUND(method_, path_, handler_)             \

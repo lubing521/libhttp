@@ -244,12 +244,12 @@ struct http_cfg {
     size_t nb_content_decoders;
 };
 
-int http_cfg_init(struct http_cfg *cfg);
+void http_cfg_init(struct http_cfg *cfg);
 void http_cfg_free(struct http_cfg *cfg);
 
-int http_cfg_content_decoder_add(struct http_cfg *, const char *,
-                                 http_content_decode_func,
-                                 http_content_delete_func);
+void http_cfg_content_decoder_add(struct http_cfg *, const char *,
+                                  http_content_decode_func,
+                                  http_content_delete_func);
 const struct http_content_decoder *
 http_cfg_content_decoder_get(const struct http_cfg *, const char *);
 

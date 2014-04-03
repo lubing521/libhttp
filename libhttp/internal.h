@@ -143,7 +143,7 @@ struct http_msg {
 void http_msg_init(struct http_msg *);
 void http_msg_free(struct http_msg *);
 
-int http_msg_add_header(struct http_msg *, const struct http_header *);
+void http_msg_add_header(struct http_msg *, const struct http_header *);
 
 bool http_msg_can_have_body(const struct http_msg *);
 
@@ -308,7 +308,7 @@ struct http_route_base {
 struct http_route_base *http_route_base_new(void);
 void http_route_base_delete(struct http_route_base *);
 
-int http_route_base_add_route(struct http_route_base *, struct http_route *);
+void http_route_base_add_route(struct http_route_base *, struct http_route *);
 int http_route_base_find_route(struct http_route_base *,
                                enum http_method, const char *,
                                const struct http_route **proute,

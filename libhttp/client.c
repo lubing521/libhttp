@@ -36,9 +36,6 @@ http_client_new(struct http_cfg *cfg, struct event_base *ev_base) {
     int ret;
 
     client = http_malloc(sizeof(struct http_client));
-    if (!client)
-        return NULL;
-
     memset(client, 0, sizeof(struct http_client));
 
     client->cfg = cfg;

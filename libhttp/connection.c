@@ -98,16 +98,7 @@ http_connection_new(enum http_connection_type type, void *client_or_server,
     }
 
     connection->rbuf = bf_buffer_new(0);
-    if (!connection->rbuf) {
-        http_set_error("%s", bf_get_error());
-        goto error;
-    }
-
     connection->wbuf = bf_buffer_new(0);
-    if (!connection->wbuf) {
-        http_set_error("%s", bf_get_error());
-        goto error;
-    }
 
     if (type == HTTP_CONNECTION_SERVER) {
         msg_type = HTTP_MSG_REQUEST;
@@ -160,10 +151,7 @@ http_connection_write(struct http_connection *connection,
 
     previous_length = bf_buffer_length(connection->wbuf);
 
-    if (bf_buffer_add(connection->wbuf, data, sz) == -1) {
-        http_set_error("%s", bf_get_error());
-        return -1;
-    }
+    bf_buffer_add(connection->wbuf, data, sz);
 
     if (previous_length == 0) {
         if (event_add(connection->ev_write, NULL) == -1) {
@@ -179,17 +167,14 @@ http_connection_write(struct http_connection *connection,
 
 int
 http_connection_printf(struct http_connection *connection,
-                                   const char *fmt, ...) {
+                       const char *fmt, ...) {
     size_t previous_length;
     va_list ap;
 
     previous_length = bf_buffer_length(connection->wbuf);
 
     va_start(ap, fmt);
-    if (bf_buffer_add_vprintf(connection->wbuf, fmt, ap) == -1) {
-        http_set_error("%s", bf_get_error());
-        return -1;
-    }
+    bf_buffer_add_vprintf(connection->wbuf, fmt, ap);
     va_end(ap);
 
     if (previous_length == 0) {

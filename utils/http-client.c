@@ -137,8 +137,7 @@ httpc_process_uri(struct http_uri *uri) {
     struct http_client *client;
     struct http_cfg cfg;
 
-    if (http_cfg_init(&cfg) == -1)
-        httpc_die("cannot initialize configuration: %s", http_get_error());
+    http_cfg_init(&cfg);
 
     cfg.host = http_uri_host(uri);
     if (!cfg.host)

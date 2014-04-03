@@ -267,8 +267,6 @@ http_decode_header_value(const char *str, size_t sz) {
         if (nb_chars + 1 >= value_sz) {            \
             value_sz *= 2;                         \
             value = http_realloc(value, value_sz); \
-            if (!value)                            \
-                goto error;                        \
         }                                          \
                                                    \
         value[nb_chars++] = c_;                    \
@@ -277,8 +275,6 @@ http_decode_header_value(const char *str, size_t sz) {
     nb_chars = 0;
     value_sz = sz;
     value = http_malloc(sz);
-    if (!value)
-        goto error;
 
     last_non_sp = 0;
 
@@ -410,8 +406,6 @@ http_query_parameters_parse(const char *query,
 
     parameters = http_calloc(nb_parameters,
                              sizeof(struct http_query_parameter));
-    if (!parameters)
-        return -1;
 
     idx = 0;
     for (;;) {
@@ -546,32 +540,21 @@ http_msg_free(struct http_msg *msg) {
     memset(msg, 0, sizeof(struct http_msg));
 }
 
-int
+void
 http_msg_add_header(struct http_msg *msg, const struct http_header *header) {
-    struct http_header *headers;
-    size_t sz;
-
     if (msg->nb_headers == 0) {
-        sz = 1;
-        headers = http_malloc(sizeof(struct http_header));
-        if (!headers)
-            return -1;
-
-        msg->headers_sz = sz;
-        msg->headers = headers;
+        msg->headers_sz = 1;
+        msg->headers = http_malloc(sizeof(struct http_header));
     } else if (msg->nb_headers + 1 > msg->headers_sz) {
-        sz = msg->headers_sz * 2;
-        headers = http_realloc(msg->headers,
-                               sz * sizeof(struct http_header));
-        if (!headers)
-            return -1;
+        size_t nsz;
 
-        msg->headers_sz = sz;
-        msg->headers = headers;
+        msg->headers_sz *= 2;
+
+        nsz = msg->headers_sz * sizeof(struct http_header);
+        msg->headers = http_realloc(msg->headers, nsz);
     }
 
     msg->headers[msg->nb_headers++] = *header;
-    return 0;
 }
 
 bool
@@ -1348,10 +1331,7 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
 
     HTTP_SKIP_CRLF();
 
-    if (http_msg_add_header(msg, &header) == -1) {
-        http_header_free(&header);
-        return -1;
-    }
+    http_msg_add_header(msg, &header);
 
     bf_buffer_skip(buf, bf_buffer_length(buf) - len);
     return 1;
@@ -1422,8 +1402,6 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
     size_t len, toklen, chunk_length;
     unsigned long long ullval;
     char token[21]; /* SIZE_MAX can be up to 20 digits long */
-    char *body;
-    size_t body_length;
 
     cfg = parser->cfg;
     msg = &parser->msg;
@@ -1511,20 +1489,14 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
         }
 
         if (msg->body_length == 0) {
-            body_length = chunk_length;
-            body = http_malloc(body_length);
+            msg->body_length = chunk_length;
+            msg->body = http_malloc(msg->body_length);
         } else {
-            body_length = msg->body_length + chunk_length;
-            body = http_realloc(msg->body, body_length);
+            msg->body_length = msg->body_length + chunk_length;
+            msg->body = http_realloc(msg->body, msg->body_length);
         }
 
-        if (!body)
-            return -1;
-
-        memcpy(body + msg->body_length, start, chunk_length);
-
-        msg->body = body;
-        msg->body_length = body_length;
+        memcpy(msg->body + msg->body_length, start, chunk_length);
 
         /* Skip the content and the final CRLF */
         ptr += chunk_length + 2;
@@ -1712,8 +1684,6 @@ ignore_header:
 
 static int
 http_msg_finalize_body(struct http_msg *msg, const struct http_cfg *cfg) {
-    char *body;
-
     /* We add a null byte after the body.
      *
      * - If the body is empty, body_length is still 0.
@@ -1725,15 +1695,11 @@ http_msg_finalize_body(struct http_msg *msg, const struct http_cfg *cfg) {
 
     if (msg->body == NULL) {
         assert(msg->body_length == 0);
-        body = http_malloc(1);
+        msg->body = http_malloc(1);
     } else {
-        body = http_realloc(msg->body, msg->body_length + 1);
+        msg->body = http_realloc(msg->body, msg->body_length + 1);
     }
 
-    if (!body)
-        return -1;
-
-    msg->body = body;
     msg->body[msg->body_length] = '\0';
 
     /* If there is a body and a if a content decoder available, use it */

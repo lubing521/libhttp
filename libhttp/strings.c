@@ -45,11 +45,7 @@ http_vasprintf(char **pstr, const char *fmt, va_list ap) {
 
     buf = bf_buffer_new(0);
 
-    if (bf_buffer_add_vprintf(buf, fmt, ap) == -1) {
-        bf_buffer_delete(buf);
-        http_set_error("%s", bf_get_error());
-        return -1;
-    }
+    bf_buffer_add_vprintf(buf, fmt, ap);
 
     if (bf_buffer_length(buf) > INT_MAX) {
         bf_buffer_delete(buf);
@@ -121,10 +117,6 @@ http_iconv(const char *str, const char *from, const char *to) {
 
     olen = str_length;
     output = http_malloc(olen + 1);
-    if (!output) {
-        iconv_close(conv);
-        return NULL;
-    }
 
     for (;;) {
         size_t ret;
@@ -146,17 +138,8 @@ http_iconv(const char *str, const char *from, const char *to) {
 
         if (ret == (size_t)-1) {
             if (errno == E2BIG) {
-                char *noutput;
-
                 olen *= 2;
-                noutput = http_realloc(output, olen + 1);
-                if (!noutput) {
-                    http_free(output);
-                    iconv_close(conv);
-                    return NULL;
-                }
-
-                output = noutput;
+                output = http_realloc(output, olen + 1);
                 continue;
             } else {
                 http_set_error("cannot convert string from %s to %s: %s",

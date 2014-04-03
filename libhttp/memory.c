@@ -52,8 +52,9 @@ http_malloc(size_t sz) {
 
     ptr = malloc(sz);
     if (!ptr) {
-        http_set_error("cannot allocate %zu bytes: %s", sz, strerror(errno));
-        return NULL;
+        fprintf(stderr, "cannot allocate %zu bytes: %s\n",
+                sz, strerror(errno));
+        abort();
     }
 
     return ptr;
@@ -65,9 +66,9 @@ http_calloc(size_t nb, size_t sz) {
 
     ptr = calloc(nb, sz);
     if (!ptr) {
-        http_set_error("cannot allocate %zu elements of %zu bytes each: %s",
-                       nb, sz, strerror(errno));
-        return NULL;
+        fprintf(stderr, "cannot allocate %zu elements of %zu bytes each: %s\n",
+                nb, sz, strerror(errno));
+        abort();
     }
 
     return ptr;
@@ -79,9 +80,9 @@ http_realloc(void *ptr, size_t sz) {
 
     nptr = realloc(ptr, sz);
     if (!nptr) {
-        http_set_error("cannot reallocate %zu bytes: %s",
-                       sz, strerror(errno));
-        return NULL;
+        fprintf(stderr, "cannot reallocate %zu bytes: %s\n",
+                sz, strerror(errno));
+        abort();
     }
 
     return nptr;
