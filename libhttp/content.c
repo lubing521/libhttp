@@ -70,6 +70,17 @@ http_form_data_delete(struct http_form_data *data) {
     http_free(data);
 }
 
+bool
+http_form_data_has_parameter(const struct http_form_data *data,
+                             const char *name) {
+    for (size_t i = 0; i < data->nb_parameters; i++) {
+        if (strcmp(data->parameters[i].name, name) == 0)
+            return true;
+    }
+
+    return false;
+}
+
 const char *
 http_form_data_get_parameter(const struct http_form_data *data,
                              const char *name) {
