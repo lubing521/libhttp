@@ -342,13 +342,8 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
 
         ret = http_msg_parse(connection->rbuf, parser);
         if (ret == -1) {
-            const char *type_str;
-
-            type_str = (connection->type == HTTP_CONNECTION_SERVER)
-                ? "request" : "response";
-
-            http_connection_error(connection, "cannot parse %s: %s",
-                                  type_str, http_get_error());
+            http_connection_error(connection, "cannot parse message: %s",
+                                  http_get_error());
             http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
                                         NULL);
             goto error;
@@ -402,10 +397,10 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         }
 
         if (parser->state == HTTP_PARSER_ERROR) {
-            http_connection_error(connection, "cannot parse request: %s",
+            http_connection_error(connection, "cannot parse message: %s",
                                   parser->errmsg);
             http_connection_write_error(connection, parser->status_code,
-                                        "cannot parse request: %s",
+                                        "cannot parse message: %s",
                                         parser->errmsg);
             goto error;
         } else if (parser->state == HTTP_PARSER_DONE) {
