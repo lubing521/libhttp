@@ -265,6 +265,49 @@ http_connection_shutdown(struct http_connection *connection) {
     return 0;
 }
 
+const char *
+http_connection_address(const struct http_connection *connection) {
+    return connection->address;
+}
+
+void
+http_connection_trace(struct http_connection *connection,
+                      const char *fmt, ...) {
+    char buf[HTTP_ERROR_BUFSZ];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
+    va_end(ap);
+
+    if (connection->type == HTTP_CONNECTION_SERVER) {
+        http_server_trace(connection->server, "%s: %s",
+                          connection->address, buf);
+    } else {
+        http_client_trace(connection->client, "%s: %s",
+                          connection->address, buf);
+    }
+}
+
+void
+http_connection_error(struct http_connection *connection,
+                      const char *fmt, ...) {
+    char buf[HTTP_ERROR_BUFSZ];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
+    va_end(ap);
+
+    if (connection->type == HTTP_CONNECTION_SERVER) {
+        http_server_error(connection->server, "%s: %s",
+                          connection->address, buf);
+    } else {
+        http_client_error(connection->client, "%s: %s",
+                          connection->address, buf);
+    }
+}
+
 void
 http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
     struct http_connection *connection;
@@ -444,44 +487,6 @@ http_connection_abort(struct http_connection *connection) {
         } else {
             http_connection_call_response_handler(connection, msg);
         }
-    }
-}
-
-void
-http_connection_error(struct http_connection *connection,
-                      const char *fmt, ...) {
-    char buf[HTTP_ERROR_BUFSZ];
-    va_list ap;
-
-    va_start(ap, fmt);
-    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
-    va_end(ap);
-
-    if (connection->type == HTTP_CONNECTION_SERVER) {
-        http_server_error(connection->server, "%s:%s: %s",
-                          connection->host, connection->port, buf);
-    } else {
-        http_client_error(connection->client, "%s:%s: %s",
-                          connection->host, connection->port, buf);
-    }
-}
-
-void
-http_connection_trace(struct http_connection *connection,
-                      const char *fmt, ...) {
-    char buf[HTTP_ERROR_BUFSZ];
-    va_list ap;
-
-    va_start(ap, fmt);
-    vsnprintf(buf, HTTP_ERROR_BUFSZ, fmt, ap);
-    va_end(ap);
-
-    if (connection->type == HTTP_CONNECTION_SERVER) {
-        http_server_trace(connection->server, "%s:%s: %s",
-                          connection->host, connection->port, buf);
-    } else {
-        http_client_trace(connection->client, "%s: %s",
-                          connection->client->numeric_host_port, buf);
     }
 }
 

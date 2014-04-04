@@ -204,6 +204,10 @@ int http_msg_parse_body(struct bf_buffer *, struct http_parser *);
 int http_msg_parse_chunk(struct bf_buffer *, struct http_parser *);
 
 /* Connections */
+
+/* host + port + ipv6 brackets + colon */
+#define HTTP_HOST_PORT_BUFSZ (NI_MAXHOST + NI_MAXSERV + 2 + 1)
+
 enum http_connection_type {
     HTTP_CONNECTION_CLIENT,
     HTTP_CONNECTION_SERVER,
@@ -223,8 +227,7 @@ struct http_connection {
     struct bf_buffer *rbuf;
     struct bf_buffer *wbuf;
 
-    char host[NI_MAXHOST];
-    char port[NI_MAXSERV];
+    char address[HTTP_HOST_PORT_BUFSZ];
 
     bool shutting_down;
 
@@ -253,11 +256,6 @@ void http_connection_on_read_event(evutil_socket_t, short, void *);
 void http_connection_on_write_event(evutil_socket_t, short, void *);
 
 void http_connection_abort(struct http_connection *);
-
-void http_connection_error(struct http_connection *, const char *, ...)
-    __attribute__((format(printf, 2, 3)));
-void http_connection_trace(struct http_connection *, const char *, ...)
-    __attribute__((format(printf, 2, 3)));
 
 /* Routes */
 enum http_route_match_result {
@@ -351,9 +349,6 @@ bool http_server_does_listen_on_host_string(const struct http_server *,
                                             const char *);
 
 /* Clients */
-
-/* host + port + ipv6 brackets + colon */
-#define HTTP_HOST_PORT_BUFSZ (NI_MAXHOST + NI_MAXSERV + 2 + 1)
 
 struct http_client {
     struct http_cfg *cfg;

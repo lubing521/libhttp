@@ -164,10 +164,10 @@ size_t http_msg_body_length(const struct http_msg *);
 const char *http_msg_get_named_parameter(const struct http_msg *, const char *);
 const char *http_msg_get_query_parameter(const struct http_msg *, const char *);
 
+const void *http_msg_content(const struct http_msg *);
+
 const char *http_header_name(const struct http_header *);
 const char *http_header_value(const struct http_header *);
-
-const void *http_msg_content(const struct http_msg *);
 
 struct http_form_data;
 
@@ -298,6 +298,13 @@ int http_client_send_request(struct http_client *, enum http_method,
 /* Connections */
 void http_connection_delete(struct http_connection *);
 int http_connection_shutdown(struct http_connection *);
+
+const char *http_connection_address(const struct http_connection *);
+
+void http_connection_trace(struct http_connection *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
+void http_connection_error(struct http_connection *, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
 
 int http_connection_write_error(struct http_connection *,
                                 enum http_status_code,

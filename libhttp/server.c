@@ -474,6 +474,8 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
     struct http_server *server;
     struct http_listener *listener;
     struct http_connection *connection;
+    char host[NI_MAXHOST];
+    char port[NI_MAXSERV];
     struct sockaddr_storage addr;
     socklen_t addrlen;
     int client_sock;
@@ -508,12 +510,24 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
     }
 
     ret = getnameinfo((struct sockaddr *)&addr, addrlen,
-                      connection->host, NI_MAXHOST,
-                      connection->port, NI_MAXSERV,
+                      host, NI_MAXHOST,
+                      port, NI_MAXSERV,
                       NI_NUMERICHOST | NI_NUMERICSERV);
     if (ret != 0) {
         http_server_error(server, "cannot resolve address: %s",
                           gai_strerror(ret));
+        http_connection_delete(connection);
+        return;
+    }
+
+    if (addr.ss_family == AF_INET) {
+        snprintf(connection->address, HTTP_HOST_PORT_BUFSZ,
+                 "%s:%s", host, port);
+    } else if (addr.ss_family == AF_INET6) {
+        snprintf(connection->address, HTTP_HOST_PORT_BUFSZ,
+                 "[%s]:%s", host, port);
+    } else {
+        http_set_error("unknown address family %d", addr.ss_family);
         http_connection_delete(connection);
         return;
     }

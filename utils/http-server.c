@@ -301,8 +301,8 @@ https_upload_buffered_post(struct http_connection *connection,
     char body[128];
     size_t body_len;
 
-    printf("/upload/buffered: %zu bytes received\n",
-           http_msg_body_length(msg));
+    http_connection_trace(connection, "%zu bytes received",
+                          http_msg_body_length(msg));
 
     snprintf(body, sizeof(body), "%zu bytes received\n",
              http_msg_body_length(msg));
@@ -323,15 +323,15 @@ https_upload_unbuffered_post(struct http_connection *connection,
     size_t body_len;
 
     if (http_msg_aborted(msg)) {
-        printf("/upload/unbuffered: request processing aborted");
+        http_connection_error(connection, "request processing aborted");
         content_len = 0;
         return;
     }
 
     content_len += http_msg_body_length(msg);
 
-    printf("/upload/unbuffered: %zu bytes received (total: %zu)\n",
-           http_msg_body_length(msg), content_len);
+    http_connection_trace(connection, "%zu/%zu bytes received",
+                          http_msg_body_length(msg), content_len);
 
     if (!http_msg_is_complete(msg))
         return;
