@@ -28,6 +28,8 @@
 
 /* Error handling */
 const char *http_get_error(void);
+void http_set_error(const char *, ...)
+    __attribute__((format(printf, 1, 2)));
 
 /* Memory */
 struct http_memory_allocator {

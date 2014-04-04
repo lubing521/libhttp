@@ -1708,8 +1708,10 @@ http_msg_finalize_body(struct http_msg *msg, const struct http_cfg *cfg) {
         decoder = http_cfg_content_decoder_get(cfg, msg->content_type);
         if (decoder) {
             msg->content = decoder->decode(msg, cfg);
-            if (!msg->content)
+            if (!msg->content) {
+                http_set_error("cannot decode content: %s", http_get_error());
                 return -1;
+            }
 
             msg->content_decoder = decoder;
         }

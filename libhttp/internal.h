@@ -32,9 +32,6 @@ int http_now_ms(uint64_t *);
 /* Error handling */
 #define HTTP_ERROR_BUFSZ 1024
 
-void http_set_error(const char *, ...)
-    __attribute__((format(printf, 1, 2)));
-
 /* Memory */
 void *http_malloc(size_t);
 void *http_calloc(size_t, size_t);

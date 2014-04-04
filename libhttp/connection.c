@@ -345,7 +345,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             http_connection_error(connection, "cannot parse message: %s",
                                   http_get_error());
             http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
-                                        NULL);
+                                        "%s", http_get_error());
             goto error;
         }
 
