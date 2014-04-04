@@ -1468,6 +1468,8 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
 
     /* Chunk data */
     if (chunk_length > 0) {
+        size_t old_length;
+
         if (len < chunk_length + 2)
             return 0;
 
@@ -1476,15 +1478,17 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
             msg->body_length = 0;
         }
 
+        old_length = msg->body_length;
+
         if (msg->body_length == 0) {
             msg->body_length = chunk_length;
             msg->body = http_malloc(msg->body_length);
         } else {
-            msg->body_length = msg->body_length + chunk_length;
+            msg->body_length += chunk_length;
             msg->body = http_realloc(msg->body, msg->body_length);
         }
 
-        memcpy(msg->body + msg->body_length, start, chunk_length);
+        memcpy(msg->body + old_length, start, chunk_length);
 
         /* Skip the content and the final CRLF */
         ptr += chunk_length + 2;
