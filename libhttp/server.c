@@ -48,6 +48,14 @@ static void http_listener_delete(struct http_listener *);
 
 static void http_listener_on_sock_event(evutil_socket_t, short, void *);
 
+void
+http_route_options_init(struct http_route_options *options,
+                        const struct http_cfg *cfg) {
+    memset(options, 0, sizeof(struct http_route_options));
+
+    options->bufferization = cfg->bufferization;
+}
+
 struct http_server *
 http_server_new(struct http_cfg *cfg, struct event_base *ev_base) {
     struct timeval tv;

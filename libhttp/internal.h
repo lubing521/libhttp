@@ -290,7 +290,7 @@ struct http_route {
 
     http_msg_handler msg_handler;
 
-    enum http_bufferization bufferization;
+    struct http_route_options options;
 };
 
 struct http_route *http_route_new(enum http_method, const char *,

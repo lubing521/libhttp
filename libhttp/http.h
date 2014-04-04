@@ -268,6 +268,9 @@ struct http_route_options {
     enum http_bufferization bufferization;
 };
 
+void http_route_options_init(struct http_route_options *,
+                             const struct http_cfg *);
+
 typedef void (*http_msg_handler)(struct http_connection *,
                                  const struct http_msg *, void *);
 

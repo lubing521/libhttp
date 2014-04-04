@@ -175,7 +175,7 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
     http_server_add_route(https.server, HTTP_GET, "/foo/bar",
                           https_foo_bar_get, NULL);
 
-    memset(&options, 0, sizeof(struct http_route_options));
+    http_route_options_init(&options, cfg);
 
     options.bufferization = HTTP_BUFFERIZE_ALWAYS;
     http_server_add_route(https.server, HTTP_POST, "/upload/buffered",

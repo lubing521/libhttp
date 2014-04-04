@@ -186,9 +186,9 @@ http_route_apply_options(struct http_route *route,
                          const struct http_route_options *options,
                          const struct http_cfg *cfg) {
     if (options) {
-        route->bufferization = options->bufferization;
+        route->options = *options;
     } else {
-        route->bufferization = cfg->bufferization;
+        http_route_options_init(&route->options, cfg);
     }
 }
 
