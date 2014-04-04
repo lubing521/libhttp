@@ -182,6 +182,7 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
                           https_upload_buffered_post, &options);
 
     options.bufferization = HTTP_BUFFERIZE_NEVER;
+    options.max_content_length = 0;
     http_server_add_route(https.server, HTTP_POST, "/upload/unbuffered",
                           https_upload_unbuffered_post, &options);
 }
@@ -320,6 +321,12 @@ https_upload_unbuffered_post(struct http_connection *connection,
 
     char body[128];
     size_t body_len;
+
+    if (http_msg_aborted(msg)) {
+        printf("/upload/unbuffered: request processing aborted");
+        content_len = 0;
+        return;
+    }
 
     content_len += http_msg_body_length(msg);
 

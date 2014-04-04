@@ -23,10 +23,14 @@
 #include "http.h"
 #include "internal.h"
 
-static void http_connection_preprocess_request(struct http_connection *,
+static int http_connection_find_route(struct http_connection *,
+                                      struct http_msg *);
+static int http_connection_preprocess_msg(struct http_connection *,
+                                          struct http_msg *);
+static int http_connection_preprocess_request(struct http_connection *,
+                                              struct http_msg *);
+static int http_connection_preprocess_response(struct http_connection *,
                                                struct http_msg *);
-static void http_connection_preprocess_response(struct http_connection *,
-                                                struct http_msg *);
 static void http_connection_call_request_handler(struct http_connection *,
                                                  struct http_msg *);
 static void http_connection_call_response_handler(struct http_connection *,
@@ -204,19 +208,13 @@ http_connection_write_error(struct http_connection *connection,
     }
 
     if (http_connection_write_response(connection, status_code, NULL) == -1)
-        goto error;
+        return -1;
 
     errmsg = fmt ? buf : NULL;
-
     if (http_connection_write_error_body(connection, status_code, errmsg) == -1)
         return -1;
 
     return 0;
-
-error:
-    http_connection_error(connection, "%s", http_get_error());
-    http_connection_delete(connection);
-    return -1;
 }
 
 void
@@ -279,6 +277,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
 
     ret = bf_buffer_read(connection->rbuf, connection->sock, BUFSIZ);
     if (ret == -1) {
+        http_connection_abort(connection);
         http_connection_error(connection, "cannot read socket: %s",
                               strerror(errno));
         http_connection_delete(connection);
@@ -309,23 +308,27 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                                   type_str, http_get_error());
             http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
                                         NULL);
-            http_connection_shutdown(connection);
-            return;
+            goto error;
         }
 
         if (http_parser_are_headers_read(parser) && !parser->msg_preprocessed) {
-            if (connection->type == HTTP_CONNECTION_SERVER) {
-                http_connection_preprocess_request(connection, msg);
-            } else {
-                http_connection_preprocess_response(connection, msg);
+            int ret;
+
+            ret = http_connection_preprocess_msg(connection, msg);
+            if (ret == -1) {
+                http_connection_error(connection, "%s", http_get_error());
+                http_connection_write_error(connection,
+                                            HTTP_INTERNAL_SERVER_ERROR, NULL);
+                goto error;
+            }
+
+            if (ret == 1) {
+                /* We already responded to the message */
+                http_connection_on_msg_processed(connection);
+                break;
             }
 
             parser->msg_preprocessed = true;
-
-            if (!connection->current_msg) {
-                /* The request was fully processed */
-                break;
-            }
         }
 
         if (ret == 0) {
@@ -357,12 +360,11 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
 
         if (parser->state == HTTP_PARSER_ERROR) {
             http_connection_error(connection, "cannot parse request: %s",
-                                   parser->errmsg);
+                                  parser->errmsg);
             http_connection_write_error(connection, parser->status_code,
                                         "cannot parse request: %s",
                                         parser->errmsg);
-            http_connection_shutdown(connection);
-            return;
+            goto error;
         } else if (parser->state == HTTP_PARSER_DONE) {
             msg->is_complete = true;
 
@@ -384,8 +386,19 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         }
     }
 
-    if (http_now_ms(&connection->last_activity) == -1)
+    if (http_now_ms(&connection->last_activity) == -1) {
         http_connection_error(connection, "%s", http_get_error());
+        goto error;
+    }
+
+    return;
+
+error:
+    /* At this point we do not know whether we started responsing to the
+     * message or not; since we do not want to let the connection in an
+     * unknown state, we close it. */
+    http_connection_abort(connection);
+    http_connection_shutdown(connection);
 }
 
 void
@@ -397,6 +410,7 @@ http_connection_on_write_event(evutil_socket_t sock, short events, void *arg) {
 
     ret = bf_buffer_write(connection->wbuf, connection->sock);
     if (ret == -1) {
+        http_connection_abort(connection);
         http_connection_error(connection, "cannot write to socket: %s",
                               strerror(errno));
         http_connection_delete(connection);
@@ -410,6 +424,25 @@ http_connection_on_write_event(evutil_socket_t sock, short events, void *arg) {
         if (connection->shutting_down) {
             http_connection_delete(connection);
             return;
+        }
+    }
+}
+
+void
+http_connection_abort(struct http_connection *connection) {
+    struct http_msg *msg;
+    bool headers_read;
+
+    msg = connection->current_msg;
+    headers_read = http_parser_are_headers_read(&connection->parser);
+
+    if (msg && headers_read && msg->is_bufferized && !msg->aborted) {
+        msg->aborted = true;
+
+        if (connection->type == HTTP_CONNECTION_SERVER) {
+            http_connection_call_request_handler(connection, msg);
+        } else {
+            http_connection_call_response_handler(connection, msg);
         }
     }
 }
@@ -570,102 +603,31 @@ http_connection_write_empty_body(struct http_connection *connection) {
     return 0;
 }
 
-static void
-http_connection_preprocess_request(struct http_connection *connection,
-                                   struct http_msg *msg) {
+static int
+http_connection_find_route(struct http_connection *connection,
+                           struct http_msg *msg) {
     struct http_route_base *route_base;
     const struct http_route *route;
+    struct http_request *request;
     enum http_route_match_result match_result;
-
-    const char *uri_string;
-    struct http_uri *uri;
     enum http_method method;
+    struct http_uri *uri;
 
     assert(msg->type == HTTP_MSG_REQUEST);
-    assert(!connection->current_msg);
 
-    connection->current_msg = msg;
-
-    method = msg->u.request.method;
-    uri_string = msg->u.request.uri_string;
-
-    /* Version */
-    connection->http_version = msg->version;
-
-    /* URI */
-    if (strcmp(uri_string, "*") == 0) {
-        if (method != HTTP_OPTIONS) {
-            http_connection_write_error(connection, HTTP_BAD_REQUEST,
-                                        "invalid uri: '*'");
-            goto msg_processed;
-        }
-
-        uri = NULL;
-    } else {
-        /* Absolute URI or absolute path */
-        uri = http_uri_new(uri_string);
-        if (!uri) {
-            http_connection_write_error(connection, HTTP_BAD_REQUEST,
-                                        "cannot parse uri: %s",
-                                        http_get_error());
-            goto msg_processed;
-        }
-
-        msg->u.request.uri = uri;
-
-        /* We have to accept absolute URIs (RFC 2616 5.1.2) but since we do
-         * not act as a proxy, we only accept them when the host and port of
-         * URI is an address we are listening on. */
-        if (uri->host) {
-            if (!http_server_does_listen_on(connection->server,
-                                            uri->host, uri->port)) {
-                http_connection_write_error(connection, HTTP_BAD_REQUEST,
-                                            "absolute uri is not associated "
-                                            "with an address we are "
-                                            "listening on");
-                goto msg_processed;
-            }
-        }
-    }
-
-    /* Query parameters */
-    if (uri && uri->query) {
-        struct http_query_parameter **p_query_parameters;
-        size_t *p_nb_query_parameters;
-
-        p_query_parameters = &msg->u.request.query_parameters;
-        p_nb_query_parameters = &msg->u.request.nb_query_parameters;
-
-        if (http_query_parameters_parse(uri->query,
-                                        p_query_parameters,
-                                        p_nb_query_parameters) == -1) {
-            http_connection_write_error(connection, HTTP_BAD_REQUEST,
-                                        "cannot parse query: %s",
-                                        http_get_error());
-            goto msg_processed;
-        }
-    }
-
-    /* We handle OPTIONS requests ourselves */
-    if (method == HTTP_OPTIONS) {
-        if (http_connection_write_options_response(connection, msg) == -1)
-            goto msg_processed;
-
-        goto msg_processed;
-    }
-
-    /* Find a request handler */
     route_base = connection->server->route_base;
+    request = &msg->u.request;
+    method = msg->u.request.method;
+    uri = msg->u.request.uri;
 
     if (http_route_base_find_route(route_base,
-                                   method, msg->u.request.uri->path,
+                                   method, uri->path,
                                    &route, &match_result,
-                                   &msg->u.request.named_parameters,
-                                   &msg->u.request.nb_named_parameters) == -1) {
+                                   &request->named_parameters,
+                                   &request->nb_named_parameters) == -1) {
         http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
-                                    "cannot find route: %s",
-                                    http_get_error());
-        goto msg_processed;
+                                    "cannot find route: %s", http_get_error());
+        return 1;
     }
 
     if (!route) {
@@ -689,33 +651,142 @@ http_connection_preprocess_request(struct http_connection *connection,
         }
 
         if (ret == -1)
-            return;
+            return -1;
 
-        goto msg_processed;
+        return 1;
     }
 
-    connection->current_request_handler = route->msg_handler;
-    connection->current_request_handler_arg = route_base->msg_handler_arg;
+    connection->current_route = route;
+    return 0;
+}
+
+static int
+http_connection_preprocess_msg(struct http_connection *connection,
+                               struct http_msg *msg) {
+    assert(!connection->current_msg);
+
+    connection->current_msg = msg;
+    connection->http_version = msg->version;
+
+    if (connection->type == HTTP_CONNECTION_SERVER) {
+        return http_connection_preprocess_request(connection, msg);
+    } else {
+        return http_connection_preprocess_response(connection, msg);
+    }
+}
+
+static int
+http_connection_preprocess_request(struct http_connection *connection,
+                                   struct http_msg *msg) {
+    const struct http_cfg *cfg;
+    const struct http_route *route;
+    const char *uri_string;
+    struct http_uri *uri;
+    enum http_method method;
+    int ret;
+
+    cfg = http_connection_get_cfg(connection);
+
+    method = msg->u.request.method;
+    uri_string = msg->u.request.uri_string;
+
+    /* URI */
+    if (strcmp(uri_string, "*") == 0) {
+        if (method != HTTP_OPTIONS) {
+            if (http_connection_write_error(connection, HTTP_BAD_REQUEST,
+                                            "invalid uri: '*'") == -1)
+                return -1;
+
+            return 1;
+        }
+
+        uri = NULL;
+    } else {
+        /* Absolute URI or absolute path */
+        uri = msg->u.request.uri;
+
+        /* We have to accept absolute URIs (RFC 2616 5.1.2) but since we do
+         * not act as a proxy, we only accept them when the host and port of
+         * URI is an address we are listening on. */
+        if (uri->host) {
+            if (!http_server_does_listen_on(connection->server,
+                                            uri->host, uri->port)) {
+                http_connection_write_error(connection, HTTP_BAD_REQUEST,
+                                            "absolute uri is not associated "
+                                            "with an address we are "
+                                            "listening on");
+                return 1;
+            }
+        }
+    }
+
+    /* Query parameters */
+    if (uri && uri->query) {
+        struct http_query_parameter **p_query_parameters;
+        size_t *p_nb_query_parameters;
+
+        p_query_parameters = &msg->u.request.query_parameters;
+        p_nb_query_parameters = &msg->u.request.nb_query_parameters;
+
+        if (http_query_parameters_parse(uri->query,
+                                        p_query_parameters,
+                                        p_nb_query_parameters) == -1) {
+            http_connection_write_error(connection, HTTP_BAD_REQUEST,
+                                        "cannot parse query: %s",
+                                        http_get_error());
+            return 1;
+        }
+    }
+
+    /* We handle OPTIONS requests ourselves */
+    if (method == HTTP_OPTIONS) {
+        if (http_connection_write_options_response(connection, msg) == -1)
+            return -1;
+
+        return 1;
+    }
+
+    /* Find a route to handle the request */
+    ret = http_connection_find_route(connection, msg);
+    if (ret != 0)
+        return ret;
+
+    route = connection->current_route;
+
+    /* Check the content length */
+    if (msg->has_content_length) {
+        size_t max_content_length;
+
+        if (route) {
+            max_content_length = route->options.max_content_length;
+        } else {
+            max_content_length = cfg->max_content_length;
+        }
+
+        if (max_content_length > 0
+         && msg->content_length > max_content_length) {
+            if (http_connection_write_error(connection,
+                                            HTTP_REQUEST_ENTITY_TOO_LARGE,
+                                            "content length too large") == -1) {
+                return -1;
+            }
+
+            return 1;
+        }
+    }
 
     /* Is the request bufferized ? */
     msg->is_bufferized = route->options.bufferization == HTTP_BUFFERIZE_ALWAYS
                       || (route->options.bufferization == HTTP_BUFFERIZE_AUTO
                           && msg->is_body_chunked);
 
-    return;
-
-msg_processed:
-    http_connection_on_msg_processed(connection);
+    return 0;
 }
 
-static void
+static int
 http_connection_preprocess_response(struct http_connection *connection,
                                     struct http_msg *msg) {
-    assert(msg->type == HTTP_MSG_RESPONSE);
-    assert(!connection->current_msg);
-
-    connection->current_msg = msg;
-    connection->http_version = msg->version;
+    return 0;
 }
 
 static void
@@ -725,10 +796,10 @@ http_connection_call_request_handler(struct http_connection *connection,
 
     assert(msg->type == HTTP_MSG_REQUEST);
     assert(connection->current_msg);
-    assert(connection->current_request_handler);
+    assert(connection->current_route);
 
-    arg = connection->current_request_handler_arg;
-    connection->current_request_handler(connection, msg, arg);
+    arg = connection->server->route_base->msg_handler_arg;
+    connection->current_route->msg_handler(connection, msg, arg);
 }
 
 static void
@@ -771,9 +842,12 @@ http_connection_on_msg_processed(struct http_connection *connection) {
 
     if (do_shutdown) {
         if (http_connection_shutdown(connection) == -1) {
+            http_connection_abort(connection);
             http_connection_error(connection,
                                   "cannot shutdown connection: %s",
                                   http_get_error());
+            http_connection_delete(connection);
+            return;
         }
     }
 
@@ -784,6 +858,7 @@ http_connection_on_msg_processed(struct http_connection *connection) {
     }
 
     if (http_parser_reset(&connection->parser, msg_type, cfg) == -1) {
+        http_connection_abort(connection);
         http_connection_error(connection, "cannot reset parser: %s",
                               http_get_error());
         http_connection_delete(connection);
@@ -793,9 +868,7 @@ http_connection_on_msg_processed(struct http_connection *connection) {
     connection->parser.connection = connection;
 
     connection->current_msg = NULL;
-
-    connection->current_request_handler = NULL;
-    connection->current_request_handler_arg = NULL;
+    connection->current_route = NULL;
 }
 
 static int
@@ -835,12 +908,8 @@ http_connection_write_error_body(struct http_connection *connection,
 
     cfg = http_connection_get_cfg(connection);
 
-    if (cfg->u.server.error_body_writer(connection, status_code,
-                                        errmsg) == -1) {
-        http_connection_error(connection, "%s", http_get_error());
-        http_connection_delete(connection);
+    if (cfg->u.server.error_body_writer(connection, status_code, errmsg) == -1)
         return -1;
-    }
 
     return 0;
 }
@@ -854,9 +923,9 @@ http_connection_write_options_response(struct http_connection *connection,
         methods = "GET, POST, HEAD, PUT, DELETE, OPTIONS";
 
         if (http_connection_write_response(connection, HTTP_OK, NULL) == -1)
-            goto error;
+            return -1;
         if (http_connection_write_header(connection, "Allow", methods) == -1)
-            goto error;
+            return -1;
     } else {
         enum http_method methods[HTTP_METHOD_MAX];
         struct http_route_base *route_base;
@@ -868,16 +937,16 @@ http_connection_write_options_response(struct http_connection *connection,
 
         if (http_route_base_find_path_methods(route_base, uri->path,
                                               methods, &nb_methods) == -1) {
-            goto error;
+            return -1;
         }
 
         if (nb_methods == 0) {
             http_connection_write_error(connection, HTTP_NOT_FOUND, NULL);
-            return 0;
+            return 1;
         }
 
         if (http_connection_write_response(connection, HTTP_OK, NULL) == -1)
-            goto error;
+            return -1;
 
         for (size_t i = 0; i < nb_methods; i++) {
             enum http_method method;
@@ -888,17 +957,12 @@ http_connection_write_options_response(struct http_connection *connection,
 
             if (http_connection_write_header(connection, "Allow",
                                              method_string) == -1) {
-                goto error;
+                return -1;
             }
         }
     }
 
     return 0;
-
-error:
-    http_connection_error(connection, "%s", http_get_error());
-    http_connection_delete(connection);
-    return -1;
 }
 
 static int
@@ -916,16 +980,22 @@ http_connection_write_405_error(struct http_connection *connection,
 
     if (http_route_base_find_path_methods(route_base, uri->path,
                                           methods, &nb_methods) == -1) {
+        http_connection_error(connection, "%s", http_get_error());
         goto error;
     }
 
     if (nb_methods == 0) {
-        http_connection_write_error(connection, HTTP_NOT_FOUND, NULL);
+        if (http_connection_write_error(connection, HTTP_NOT_FOUND,
+                                        NULL) == -1) {
+            http_connection_error(connection, "%s", http_get_error());
+            goto error;
+        }
         return 0;
     }
 
     if (http_connection_write_response(connection, HTTP_METHOD_NOT_ALLOWED,
                                        NULL) == -1) {
+        http_connection_error(connection, "%s", http_get_error());
         goto error;
     }
 
@@ -944,14 +1014,13 @@ http_connection_write_405_error(struct http_connection *connection,
 
     if (http_connection_write_error_body(connection, HTTP_METHOD_NOT_ALLOWED,
                                          NULL) == -1) {
-        http_connection_error(connection, "cannot write error body: %s",
-                              http_get_error());
+        goto error;
     }
 
     return 0;
 
 error:
-    http_connection_error(connection, "%s", http_get_error());
+    http_connection_abort(connection);
     http_connection_delete(connection);
     return -1;
 }

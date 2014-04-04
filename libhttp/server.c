@@ -54,6 +54,7 @@ http_route_options_init(struct http_route_options *options,
     memset(options, 0, sizeof(struct http_route_options));
 
     options->bufferization = cfg->bufferization;
+    options->max_content_length = cfg->max_content_length;
 }
 
 struct http_server *

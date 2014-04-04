@@ -178,6 +178,11 @@ http_msg_is_complete(const struct http_msg *msg) {
     return msg->is_complete;
 }
 
+bool
+http_msg_aborted(const struct http_msg *msg) {
+    return msg->aborted;
+}
+
 const char *
 http_msg_body(const struct http_msg *msg) {
     return msg->body;
@@ -962,13 +967,22 @@ http_msg_parse_request_line(struct bf_buffer *buf, struct http_parser *parser) {
     found = false;
     while (len > 0) {
         if (*ptr == ' ') {
+            char *uri_string;
+
             toklen = (size_t)(ptr - start);
             if (toklen > cfg->u.server.max_request_uri_length)
                 HTTP_ERROR(HTTP_REQUEST_URI_TOO_LONG, "request uri too large");
 
-            msg->u.request.uri_string = http_strndup(start, toklen);
-            if (!msg->u.request.uri_string)
-                return -1;
+            uri_string = http_strndup(start, toklen);
+            msg->u.request.uri_string = uri_string;
+
+            if (strcmp(uri_string, "*") != 0) {
+                msg->u.request.uri = http_uri_new(uri_string);
+                if (!msg->u.request.uri) {
+                    HTTP_ERROR(HTTP_BAD_REQUEST,
+                               "cannot parse uri: %s", http_get_error());
+                }
+            }
 
             found = true;
             break;
@@ -1154,9 +1168,6 @@ http_msg_parse_status_line(struct bf_buffer *buf, struct http_parser *parser) {
                 HTTP_ERROR(1, "empty reason phrase");
 
             msg->u.response.reason_phrase = http_strndup(start, toklen);
-            if (!msg->u.response.reason_phrase)
-                return -1;
-
             found = true;
             break;
         }
@@ -1228,9 +1239,6 @@ http_msg_parse_headers(struct bf_buffer *buf, struct http_parser *parser) {
             }
 
             header.name = http_strndup(start, toklen);
-            if (!header.name)
-                return -1;
-
             found = true;
             break;
         } else if (!http_is_token_char((unsigned char)*ptr)) {
@@ -1365,9 +1373,6 @@ http_msg_parse_body(struct bf_buffer *buf, struct http_parser *parser) {
 
     if (msg->body_length > 0) {
         msg->body = http_strndup(ptr, msg->body_length);
-        if (!msg->body)
-            return -1;
-
         bf_buffer_skip(buf, msg->body_length);
     }
 
@@ -1498,10 +1503,12 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
 
 static int
 http_msg_process_headers(struct http_parser *parser) {
+    struct http_connection *connection;
     const struct http_cfg *cfg;
     struct http_msg *msg;
     const char *host;
 
+    connection = parser->connection;
     cfg = parser->cfg;
     msg = &parser->msg;
 
@@ -1560,11 +1567,6 @@ http_msg_process_headers(struct http_parser *parser) {
             if (http_parse_size(header->value, &msg->content_length) == -1) {
                 HTTP_ERROR(HTTP_BAD_REQUEST, "cannot parse Content-Length: %s",
                            http_get_error());
-            }
-
-            if (msg->content_length > cfg->max_content_length) {
-                HTTP_ERROR(HTTP_REQUEST_ENTITY_TOO_LARGE,
-                           "Content-Length header too large");
             }
         } else if (HTTP_HEADER_IS("Content-Type")) {
             msg->content_type = header->value;

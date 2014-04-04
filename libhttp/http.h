@@ -156,6 +156,7 @@ const struct http_header *http_msg_header(const struct http_msg *, size_t);
 const char *http_msg_get_header(const struct http_msg *, const char *);
 
 bool http_msg_is_complete(const struct http_msg *);
+bool http_msg_aborted(const struct http_msg *);
 
 const char *http_msg_body(const struct http_msg *);
 size_t http_msg_body_length(const struct http_msg *);
@@ -266,6 +267,8 @@ char *http_uri_encode_path_and_query(const struct http_uri *);
 /* Server */
 struct http_route_options {
     enum http_bufferization bufferization;
+
+    size_t max_content_length;
 };
 
 void http_route_options_init(struct http_route_options *,

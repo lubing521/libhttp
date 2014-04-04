@@ -124,6 +124,7 @@ struct http_msg {
 
     bool is_bufferized;
     bool is_complete;
+    bool aborted;
 
     char *body;
     size_t body_length;
@@ -234,9 +235,7 @@ struct http_connection {
     uint64_t last_activity;
 
     struct http_msg *current_msg;
-
-    http_msg_handler current_request_handler;
-    void *current_request_handler_arg;
+    const struct http_route *current_route;
 };
 
 struct http_connection *http_connection_new(enum http_connection_type,
@@ -252,6 +251,8 @@ int http_connection_printf(struct http_connection *, const char *, ...)
 
 void http_connection_on_read_event(evutil_socket_t, short, void *);
 void http_connection_on_write_event(evutil_socket_t, short, void *);
+
+void http_connection_abort(struct http_connection *);
 
 void http_connection_error(struct http_connection *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
