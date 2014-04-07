@@ -249,7 +249,6 @@ https_foo_get(struct http_connection *connection, const struct http_msg *msg,
 
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_header_size(connection, "Content-Length", body_len);
     http_connection_write_body(connection, body, body_len);
 }
 
@@ -274,7 +273,6 @@ https_foo_post(struct http_connection *connection, const struct http_msg *msg,
 
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_header_size(connection, "Content-Length", body_len);
     http_connection_write_body(connection, body, body_len);
 
     content_len = 0;
@@ -291,7 +289,6 @@ https_foo_bar_get(struct http_connection *connection,
 
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_header_size(connection, "Content-Length", body_len);
     http_connection_write_body(connection, body, body_len);
 }
 
@@ -310,7 +307,6 @@ https_upload_buffered_post(struct http_connection *connection,
 
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_header_size(connection, "Content-Length", body_len);
     http_connection_write_body(connection, body, body_len);
 }
 
@@ -341,7 +337,6 @@ https_upload_unbuffered_post(struct http_connection *connection,
 
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_header_size(connection, "Content-Length", body_len);
     http_connection_write_body(connection, body, body_len);
 
     content_len = 0;

@@ -586,6 +586,11 @@ http_connection_write_body(struct http_connection *connection,
             return -1;
     }
 
+    if (http_connection_write_header_size(connection, "Content-Length",
+                                          sz) == -1) {
+        return -1;
+    }
+
     if (http_connection_write(connection, "\r\n", 2) == -1)
         return -1;
 
@@ -597,6 +602,9 @@ http_connection_write_body(struct http_connection *connection,
 
 int
 http_connection_write_empty_body(struct http_connection *connection) {
+    if (http_connection_write_header(connection, "Content-Length", "0") == -1)
+        return -1;
+
     if (http_connection_write(connection, "\r\n", 2) == -1)
         return -1;
 
