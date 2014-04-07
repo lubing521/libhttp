@@ -194,6 +194,11 @@ http_msg_content_length(const struct http_msg *msg) {
 }
 
 const char *
+http_msg_content_type(const struct http_msg *msg) {
+    return msg->content_type;
+}
+
+const char *
 http_msg_body(const struct http_msg *msg) {
     return msg->body;
 }
