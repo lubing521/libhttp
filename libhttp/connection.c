@@ -102,7 +102,7 @@ http_connection_new(enum http_connection_type type, void *client_or_server,
     }
 
     connection->rbuf = bf_buffer_new(0);
-    connection->wbuf = bf_buffer_new(0);
+    connection->wstream = http_stream_new();
 
     if (type == HTTP_CONNECTION_SERVER) {
         msg_type = HTTP_MSG_REQUEST;
@@ -148,49 +148,42 @@ http_connection_check_for_timeout(struct http_connection *connection,
     }
 }
 
-int
+void
 http_connection_write(struct http_connection *connection,
                       const void *data, size_t sz) {
-    size_t previous_length;
+    http_stream_add_data(connection->wstream, data, sz);
 
-    previous_length = bf_buffer_length(connection->wbuf);
-
-    bf_buffer_add(connection->wbuf, data, sz);
-
-    if (previous_length == 0) {
+    if (!connection->is_ev_write_enabled) {
         if (event_add(connection->ev_write, NULL) == -1) {
-            http_set_error("cannot add write event handler: %s",
-                           strerror(errno));
-            bf_buffer_truncate(connection->wbuf, previous_length);
-            return -1;
+            http_connection_error(connection,
+                                  "cannot add write event handler: %s",
+                                  strerror(errno));
+            return;
         }
-    }
 
-    return 0;
+        connection->is_ev_write_enabled = true;
+    }
 }
 
-int
+void
 http_connection_printf(struct http_connection *connection,
                        const char *fmt, ...) {
-    size_t previous_length;
     va_list ap;
 
-    previous_length = bf_buffer_length(connection->wbuf);
-
     va_start(ap, fmt);
-    bf_buffer_add_vprintf(connection->wbuf, fmt, ap);
+    http_stream_add_vprintf(connection->wstream, fmt, ap);
     va_end(ap);
 
-    if (previous_length == 0) {
+    if (!connection->is_ev_write_enabled) {
         if (event_add(connection->ev_write, NULL) == -1) {
-            http_set_error("cannot add write event handler: %s",
-                           strerror(errno));
-            bf_buffer_truncate(connection->wbuf, previous_length);
-            return -1;
+            http_connection_error(connection,
+                                  "cannot add write event handler: %s",
+                                  strerror(errno));
+            return;
         }
-    }
 
-    return 0;
+        connection->is_ev_write_enabled = true;
+    }
 }
 
 int
@@ -238,7 +231,7 @@ http_connection_delete(struct http_connection *connection) {
         event_free(connection->ev_write);
 
     bf_buffer_delete(connection->rbuf);
-    bf_buffer_delete(connection->wbuf);
+    http_stream_delete(connection->wstream);
 
     http_parser_free(&connection->parser);
 
@@ -442,11 +435,12 @@ error:
 void
 http_connection_on_write_event(evutil_socket_t sock, short events, void *arg) {
     struct http_connection *connection;
-    ssize_t ret;
+    int ret;
+    size_t sz;
 
     connection = arg;
 
-    ret = bf_buffer_write(connection->wbuf, connection->sock);
+    ret = http_stream_write(connection->wstream, connection->sock, &sz);
     if (ret == -1) {
         http_connection_abort(connection);
         http_connection_error(connection, "cannot write to socket: %s",
@@ -455,9 +449,10 @@ http_connection_on_write_event(evutil_socket_t sock, short events, void *arg) {
         return;
     }
 
-    bf_buffer_skip(connection->wbuf, (size_t)ret);
-    if (bf_buffer_length(connection->wbuf) == 0) {
+    if (ret == 0) {
+        /* Stream consumed */
         event_del(connection->ev_write);
+        connection->is_ev_write_enabled = false;
 
         if (connection->shutting_down) {
             http_connection_delete(connection);
@@ -504,11 +499,8 @@ http_connection_write_request(struct http_connection *connection,
     if (!path)
         return -1;
 
-    if (http_connection_printf(connection, "%s %s %s\r\n",
-                               method_str, path, version_str) == -1) {
-        http_free(path);
-        return -1;
-    }
+    http_connection_printf(connection, "%s %s %s\r\n",
+                           method_str, path, version_str);
 
     http_free(path);
     return 0;
@@ -534,12 +526,9 @@ http_connection_write_response(struct http_connection *connection,
         }
     }
 
-    if (http_connection_printf(connection, "%s %d %s\r\n",
-                               version_str, status_code,
-                               reason_phrase) == -1) {
-        return -1;
-    }
-
+    http_connection_printf(connection, "%s %d %s\r\n",
+                           version_str, status_code,
+                           reason_phrase);
     return 0;
 }
 
@@ -554,25 +543,17 @@ http_connection_write_header(struct http_connection *connection,
         return -1;
     }
 
-    if (http_connection_printf(connection, "%s: %s\r\n",
-                               name, encoded_value) == -1) {
-        http_free(encoded_value);
-        return -1;
-    }
+    http_connection_printf(connection, "%s: %s\r\n",
+                           name, encoded_value);
 
     http_free(encoded_value);
     return 0;
 }
 
-int
+void
 http_connection_write_header_size(struct http_connection *connection,
                                   const char *name, size_t value) {
-    if (http_connection_printf(connection, "%s: %zu\r\n",
-                               name, value) == -1) {
-        return -1;
-    }
-
-    return 0;
+    http_connection_printf(connection, "%s: %zu\r\n", name, value);
 }
 
 int
@@ -586,16 +567,9 @@ http_connection_write_body(struct http_connection *connection,
             return -1;
     }
 
-    if (http_connection_write_header_size(connection, "Content-Length",
-                                          sz) == -1) {
-        return -1;
-    }
-
-    if (http_connection_write(connection, "\r\n", 2) == -1)
-        return -1;
-
-    if (http_connection_write(connection, buf, sz) == -1)
-        return -1;
+    http_connection_write_header_size(connection, "Content-Length", sz);
+    http_connection_write(connection, "\r\n", 2);
+    http_connection_write(connection, buf, sz);
 
     return 0;
 }
@@ -605,9 +579,7 @@ http_connection_write_empty_body(struct http_connection *connection) {
     if (http_connection_write_header(connection, "Content-Length", "0") == -1)
         return -1;
 
-    if (http_connection_write(connection, "\r\n", 2) == -1)
-        return -1;
-
+    http_connection_write(connection, "\r\n", 2);
     return 0;
 }
 

@@ -54,6 +54,25 @@ char *http_iconv(const char *, const char *, const char *);
 const char *http_fmt_data(const char *, size_t);
 #endif
 
+/* Streams */
+struct http_stream_functions {
+    void (*delete_func)(intptr_t);
+    int (*write_func)(intptr_t, int, size_t *);
+};
+
+struct http_stream *http_stream_new(void);
+void http_stream_delete(struct http_stream *);
+
+void http_stream_add_data(struct http_stream *, const void *, size_t);
+void http_stream_add_vprintf(struct http_stream *, const char *, va_list);
+void http_stream_add_printf(struct http_stream *, const char *, ...);
+void http_stream_add_entry(struct http_stream *, intptr_t,
+                           const struct http_stream_functions *);
+
+int http_stream_write(struct http_stream *, int, size_t *);
+
+extern struct http_stream_functions http_stream_buffer_functions;
+
 /* Protocol */
 char *http_decode_header_value(const char *, size_t);
 
@@ -220,9 +239,10 @@ struct http_connection {
 
     struct event *ev_read;
     struct event *ev_write;
+    bool is_ev_write_enabled;
 
     struct bf_buffer *rbuf;
-    struct bf_buffer *wbuf;
+    struct http_stream *wstream;
 
     char address[HTTP_HOST_PORT_BUFSZ];
 
@@ -245,8 +265,8 @@ const struct http_cfg *http_connection_get_cfg(const struct http_connection *);
 
 void http_connection_check_for_timeout(struct http_connection *, uint64_t);
 
-int http_connection_write(struct http_connection *, const void *, size_t);
-int http_connection_printf(struct http_connection *, const char *, ...)
+void http_connection_write(struct http_connection *, const void *, size_t);
+void http_connection_printf(struct http_connection *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
 void http_connection_on_read_event(evutil_socket_t, short, void *);
