@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <event.h>
@@ -55,6 +56,8 @@ static void https_foo_get(struct http_connection *, const struct http_msg *,
 static void https_foo_post(struct http_connection *, const struct http_msg *,
                            void *);
 static void https_foo_bar_get(struct http_connection *,
+                              const struct http_msg *, void *);
+static void https_license_get(struct http_connection *,
                               const struct http_msg *, void *);
 static void https_upload_buffered_post(struct http_connection *,
                                        const struct http_msg *, void *);
@@ -175,12 +178,15 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
     http_server_add_route(https.server, HTTP_GET, "/foo/bar",
                           https_foo_bar_get, NULL);
 
-    http_route_options_init(&options, cfg);
+    http_server_add_route(https.server, HTTP_GET, "/license",
+                          https_license_get, NULL);
 
+    http_route_options_init(&options, cfg);
     options.bufferization = HTTP_BUFFERIZE_ALWAYS;
     http_server_add_route(https.server, HTTP_POST, "/upload/buffered",
                           https_upload_buffered_post, &options);
 
+    http_route_options_init(&options, cfg);
     options.bufferization = HTTP_BUFFERIZE_NEVER;
     options.max_content_length = 0;
     http_server_add_route(https.server, HTTP_POST, "/upload/unbuffered",
@@ -290,6 +296,34 @@ https_foo_bar_get(struct http_connection *connection,
     http_connection_write_response(connection, HTTP_OK, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
     http_connection_write_body(connection, body, body_len);
+}
+
+static void
+https_license_get(struct http_connection *connection,
+                  const struct http_msg *msg, void *arg) {
+    const char *path;
+    int fd;
+
+    path = "./LICENSE";
+
+    fd = open(path, O_RDONLY);
+    if (fd == -1) {
+        if (errno == ENOENT) {
+            http_connection_write_error(connection, HTTP_NOT_FOUND, NULL);
+        } else {
+            http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
+                                        "cannot open %s: %s",
+                                        path, strerror(errno));
+        }
+
+        return;
+    }
+
+    http_connection_write_response(connection, HTTP_OK, NULL);
+    http_connection_write_header(connection, "Content-Type", "text/plain");
+
+    if (http_connection_write_file(connection, fd, path) == -1)
+        http_connection_delete(connection);
 }
 
 static void

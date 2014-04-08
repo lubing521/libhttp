@@ -18,6 +18,8 @@
 #include <errno.h>
 #include <string.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "http.h"
@@ -580,6 +582,26 @@ http_connection_write_empty_body(struct http_connection *connection) {
         return -1;
 
     http_connection_write(connection, "\r\n", 2);
+    return 0;
+}
+
+int
+http_connection_write_file(struct http_connection *connection, int fd,
+                           const char *path) {
+    struct stat st;
+    size_t sz;
+
+    if (fstat(fd, &st) == -1) {
+        http_set_error("cannot stat file %s: %s", path, strerror(errno));
+        return -1;
+    }
+
+    sz = (size_t)st.st_size;
+
+    http_connection_write_header_size(connection, "Content-Length", sz);
+    http_connection_write(connection, "\r\n", 2);
+    http_stream_add_file(connection->wstream, fd, path);
+
     return 0;
 }
 

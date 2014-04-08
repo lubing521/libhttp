@@ -63,15 +63,17 @@ struct http_stream_functions {
 struct http_stream *http_stream_new(void);
 void http_stream_delete(struct http_stream *);
 
+void http_stream_add_entry(struct http_stream *, intptr_t,
+                           const struct http_stream_functions *);
 void http_stream_add_data(struct http_stream *, const void *, size_t);
 void http_stream_add_vprintf(struct http_stream *, const char *, va_list);
 void http_stream_add_printf(struct http_stream *, const char *, ...);
-void http_stream_add_entry(struct http_stream *, intptr_t,
-                           const struct http_stream_functions *);
+void http_stream_add_file(struct http_stream *, int, const char *);
 
 int http_stream_write(struct http_stream *, int, size_t *);
 
 extern struct http_stream_functions http_stream_buffer_functions;
+extern struct http_stream_functions http_stream_file_functions;
 
 /* Protocol */
 char *http_decode_header_value(const char *, size_t);

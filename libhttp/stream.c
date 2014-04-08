@@ -14,7 +14,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <errno.h>
 #include <string.h>
+
+#include <unistd.h>
 
 #include "http.h"
 #include "internal.h"
@@ -31,9 +34,6 @@ struct http_stream_entry {
 static struct http_stream_entry *http_stream_entry_new(intptr_t);
 static void http_stream_entry_delete(struct http_stream_entry *);
 
-int http_stream_buffer_write(intptr_t, int, size_t *);
-void http_stream_buffer_delete(intptr_t);
-
 struct http_stream {
     struct http_stream_entry *first_entry;
     struct http_stream_entry *last_entry;
@@ -41,9 +41,30 @@ struct http_stream {
 
 static void http_stream_remove_first_entry(struct http_stream *);
 
+
+static int http_stream_buffer_write(intptr_t, int, size_t *);
+static void http_stream_buffer_delete(intptr_t);
+
 struct http_stream_functions http_stream_buffer_functions = {
     .delete_func = http_stream_buffer_delete,
     .write_func  = http_stream_buffer_write,
+};
+
+
+struct http_stream_file {
+    int fd;
+    char *path;
+    struct bf_buffer *buf;
+};
+
+static struct http_stream_file *http_stream_file_new(int, const char *);
+
+static int http_stream_file_write(intptr_t, int, size_t *);
+static void http_stream_file_delete(intptr_t);
+
+struct http_stream_functions http_stream_file_functions = {
+    .delete_func = http_stream_file_delete,
+    .write_func  = http_stream_file_write,
 };
 
 struct http_stream *
@@ -74,6 +95,26 @@ http_stream_delete(struct http_stream *stream) {
 
     memset(stream, 0, sizeof(struct http_stream));
     http_free(stream);
+}
+
+void
+http_stream_add_entry(struct http_stream *stream, intptr_t arg,
+                       const struct http_stream_functions *functions) {
+    struct http_stream_entry *entry;
+
+    entry = http_stream_entry_new(arg);
+    entry->functions = *functions;
+
+    entry->prev = stream->last_entry;
+    entry->next = NULL;
+
+    if (stream->last_entry)
+        stream->last_entry->next = entry;
+
+    if (!stream->first_entry)
+        stream->first_entry = entry;
+
+    stream->last_entry = entry;
 }
 
 void
@@ -123,23 +164,11 @@ http_stream_add_printf(struct http_stream *stream, const char *fmt, ...) {
 }
 
 void
-http_stream_add_entry(struct http_stream *stream, intptr_t arg,
-                       const struct http_stream_functions *functions) {
-    struct http_stream_entry *entry;
+http_stream_add_file(struct http_stream *stream, int fd, const char *path) {
+    struct http_stream_file *file;
 
-    entry = http_stream_entry_new(arg);
-    entry->functions = *functions;
-
-    entry->prev = stream->last_entry;
-    entry->next = NULL;
-
-    if (stream->last_entry)
-        stream->last_entry->next = entry;
-
-    if (!stream->first_entry)
-        stream->first_entry = entry;
-
-    stream->last_entry = entry;
+    file = http_stream_file_new(fd, path);
+    http_stream_add_entry(stream, (intptr_t)file, &http_stream_file_functions);
 }
 
 int
@@ -157,36 +186,11 @@ http_stream_write(struct http_stream *stream, int fd, size_t *psz) {
          * consumed. */
         http_stream_remove_first_entry(stream);
         http_stream_entry_delete(entry);
-        return ret;
+
+        return stream->first_entry ? 1 : 0;
     }
 
     return 1;
-}
-
-int
-http_stream_buffer_write(intptr_t arg, int fd, size_t *psz) {
-    struct bf_buffer *buf;
-    ssize_t ret;
-
-    buf = (struct bf_buffer *)arg;
-
-    ret = bf_buffer_write(buf, fd);
-    if (ret == -1) {
-        http_set_error("%s", bf_get_error());
-        return -1;
-    }
-
-    *psz = (size_t)ret;
-
-    if (bf_buffer_length(buf) == 0)
-        return 0;
-
-    return 1;
-}
-
-void
-http_stream_buffer_delete(intptr_t arg) {
-    bf_buffer_delete((struct bf_buffer *)arg);
 }
 
 static struct http_stream_entry *
@@ -227,4 +231,99 @@ http_stream_remove_first_entry(struct http_stream *stream) {
     } else {
         stream->first_entry = stream->first_entry->next;
     }
+}
+
+static int
+http_stream_buffer_write(intptr_t arg, int fd, size_t *psz) {
+    struct bf_buffer *buf;
+    ssize_t ret;
+
+    buf = (struct bf_buffer *)arg;
+
+    ret = bf_buffer_write(buf, fd);
+    if (ret == -1) {
+        http_set_error("%s", bf_get_error());
+        return -1;
+    }
+
+    *psz = (size_t)ret;
+
+    if (bf_buffer_length(buf) == 0)
+        return 0;
+
+    return 1;
+}
+
+static void
+http_stream_buffer_delete(intptr_t arg) {
+    bf_buffer_delete((struct bf_buffer *)arg);
+}
+
+static struct http_stream_file *
+http_stream_file_new(int fd, const char *path) {
+    struct http_stream_file *file;
+
+    file = http_malloc(sizeof(struct http_stream_file));
+    memset(file, 0, sizeof(struct http_stream_file));
+
+    file->fd = fd;
+    file->path = http_strdup(path);
+    file->buf = bf_buffer_new(0);
+
+    return file;
+}
+
+static int
+http_stream_file_write(intptr_t arg, int fd, size_t *psz) {
+    struct http_stream_file *file;
+    ssize_t ret;
+
+    file = (struct http_stream_file *)arg;
+
+    if (bf_buffer_length(file->buf) == 0) {
+        ret = bf_buffer_read(file->buf, file->fd, BUFSIZ);
+        if (ret == -1) {
+            http_set_error("cannot read %s: %s", file->path, strerror(errno));
+            return -1;
+        }
+
+        if (ret == 0) {
+            close(file->fd);
+            file->fd = -1;
+        }
+    }
+
+    if (bf_buffer_length(file->buf) > 0) {
+        ret = bf_buffer_write(file->buf, fd);
+        if (ret == -1) {
+            http_set_error("%s", strerror(errno));
+            return -1;
+        }
+
+        *psz = (size_t)ret;
+    } else {
+        *psz = 0;
+    }
+
+    if (file->fd == -1 && bf_buffer_length(file->buf) == 0)
+        return 0;
+
+    return 1;
+}
+
+static void
+http_stream_file_delete(intptr_t arg) {
+    struct http_stream_file *file;
+
+    file = (struct http_stream_file *)arg;
+    if (!file)
+        return;
+
+    http_free(file->path);
+    if (file->fd >= 0)
+        close(file->fd);
+    bf_buffer_delete(file->buf);
+
+    memset(file, 0, sizeof(struct http_stream_file));
+    http_free(file);
 }

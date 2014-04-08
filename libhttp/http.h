@@ -328,4 +328,6 @@ int http_connection_write_body(struct http_connection *,
                                const char *, size_t);
 int http_connection_write_empty_body(struct http_connection *);
 
+int http_connection_write_file(struct http_connection *, int, const char *);
+
 #endif
