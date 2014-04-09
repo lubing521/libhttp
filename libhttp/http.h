@@ -161,7 +161,7 @@ bool http_msg_aborted(const struct http_msg *);
 
 bool http_msg_has_content_length(const struct http_msg *);
 size_t http_msg_content_length(const struct http_msg *);
-const char *http_msg_content_type(const struct http_msg *);
+const struct http_media_type *http_msg_content_type(const struct http_msg *);
 
 const char *http_msg_body(const struct http_msg *);
 size_t http_msg_body_length(const struct http_msg *);

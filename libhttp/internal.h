@@ -157,7 +157,7 @@ struct http_msg {
 
     uint32_t connection_options;
 
-    const char *content_type;
+    struct http_media_type *content_type;
 };
 
 void http_msg_init(struct http_msg *);

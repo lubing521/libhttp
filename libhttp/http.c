@@ -193,7 +193,7 @@ http_msg_content_length(const struct http_msg *msg) {
     return msg->content_length;
 }
 
-const char *
+const struct http_media_type *
 http_msg_content_type(const struct http_msg *msg) {
     return msg->content_type;
 }
@@ -267,7 +267,7 @@ http_msg_has_form_data(const struct http_msg *msg) {
     if (!msg->content_type)
         return false;
 
-    return strcmp(msg->content_type,
+    return strcmp(http_media_type_base_string(msg->content_type),
                   "application/x-www-form-urlencoded") == 0;
 }
 
@@ -556,6 +556,8 @@ http_msg_free(struct http_msg *msg) {
 
     if (msg->content_decoder)
         msg->content_decoder->delete(msg->content);
+
+    http_media_type_delete(msg->content_type);
 
     memset(msg, 0, sizeof(struct http_msg));
 }
@@ -1588,7 +1590,11 @@ http_msg_process_headers(struct http_parser *parser) {
                            http_get_error());
             }
         } else if (HTTP_HEADER_IS("Content-Type")) {
-            msg->content_type = header->value;
+            msg->content_type = http_media_type_new(header->value);
+            if (!msg->content_type) {
+                HTTP_ERROR(HTTP_BAD_REQUEST, "cannot parse Content-Type: %s",
+                           http_get_error());
+            }
         } else if (HTTP_HEADER_IS("Transfer-Encoding")) {
             const char *list, *end;
             char token[32];
@@ -1706,11 +1712,14 @@ http_msg_finalize_body(struct http_msg *msg, const struct http_cfg *cfg) {
 
     msg->body[msg->body_length] = '\0';
 
-    /* If there is a body and a if a content decoder available, use it */
+    /* If there is a body and if a content decoder available, use it */
     if (msg->content_type) {
         const struct http_content_decoder *decoder;
+        const char *media_type;
 
-        decoder = http_cfg_content_decoder_get(cfg, msg->content_type);
+        media_type = http_media_type_base_string(msg->content_type);
+
+        decoder = http_cfg_content_decoder_get(cfg, media_type);
         if (decoder) {
             msg->content = decoder->decode(msg, cfg);
             if (!msg->content) {
