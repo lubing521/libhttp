@@ -38,6 +38,7 @@ http_uri_new(const char *str) {
     struct http_uri *uri;
 
     uri = http_malloc(sizeof(struct http_uri));
+    memset(uri, 0, sizeof(struct http_uri));
 
     if (http_uri_parse(str, uri) == -1) {
         http_uri_delete(uri);
@@ -86,7 +87,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
 
     if (*ptr == '\0') {
         http_set_error("empty string");
-        goto error;
+        return -1;
     }
 
     /* Scheme */
@@ -99,7 +100,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
             && *ptr != '%') {
         http_set_error("invalid first character \\%hhu in scheme",
                        (unsigned char)*ptr);
-        goto error;
+        return -1;
     }
 
     for (;;) {
@@ -107,14 +108,14 @@ http_uri_parse(const char *str, struct http_uri *uri) {
             toklen = (size_t)(ptr - start);
             uri->scheme = http_uri_decode_component(start, toklen);
             if (!uri->scheme)
-                goto error;
+                return -1;
 
             break;
         } else if (!http_uri_is_scheme_char((unsigned char)*ptr)
                 && *ptr != '%') {
             http_set_error("invalid character \\%hhu in scheme",
                            (unsigned char)*ptr);
-            goto error;
+            return -1;
         }
 
         ptr++;
@@ -123,7 +124,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
     /* Skip '://' */
     if (ptr[0] != ':' || ptr[1] != '/' || ptr[2] != '/') {
         http_set_error("invalid characters after scheme");
-        goto error;
+        return -1;
     }
 
     ptr += 3;
@@ -143,7 +144,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
 
             uri->user = http_uri_decode_component(start, toklen);
             if (!uri->user)
-                goto error;
+                return -1;
 
             if (colon)
                 ptr = colon;
@@ -170,12 +171,12 @@ http_uri_parse(const char *str, struct http_uri *uri) {
                 toklen = (size_t)(ptr - start - 1);
                 if (toklen == 0) {
                     http_set_error("empty password");
-                    goto error;
+                    return -1;
                 }
 
                 uri->password = http_uri_decode_component(start + 1, toklen);
                 if (!uri->password)
-                    goto error;
+                    return -1;
 
                 break;
             } else if (*ptr == '/') {
@@ -188,7 +189,7 @@ http_uri_parse(const char *str, struct http_uri *uri) {
 
         if (!uri->password) {
             http_set_error("empty password");
-            goto error;
+            return -1;
         }
     }
 
@@ -206,18 +207,18 @@ http_uri_parse(const char *str, struct http_uri *uri) {
                 toklen = (size_t)(ptr - start);
                 if (toklen == 0) {
                     http_set_error("empty host");
-                    goto error;
+                    return -1;
                 }
 
                 uri->host = http_uri_decode_component(start, toklen);
                 if (!uri->host)
-                    goto error;
+                    return -1;
 
                 break;
             } else if (!http_uri_is_ipv4_addr_char((unsigned char)*ptr)) {
                 http_set_error("invalid character \\%hhu in ipv4 address",
                                (unsigned char)*ptr);
-                goto error;
+                return -1;
             }
 
             ptr++;
@@ -232,23 +233,23 @@ http_uri_parse(const char *str, struct http_uri *uri) {
                 toklen = (size_t)(ptr - start);
                 if (toklen == 0) {
                     http_set_error("empty host");
-                    goto error;
+                    return -1;
                 }
 
                 uri->host = http_uri_decode_component(start, toklen);
                 if (!uri->host)
-                    goto error;
+                    return -1;
 
                 ptr++; /* ']' */
 
                 break;
             } else if (*ptr == '\0') {
                 http_set_error("truncated ipv6 address");
-                goto error;
+                return -1;
             } else if (!http_uri_is_ipv6_addr_char((unsigned char)*ptr)) {
                 http_set_error("invalid character \\%hhu in ipv6 address",
                                (unsigned char)*ptr);
-                goto error;
+                return -1;
             }
 
             ptr++;
@@ -260,12 +261,12 @@ http_uri_parse(const char *str, struct http_uri *uri) {
                 toklen = (size_t)(ptr - start);
                 if (toklen == 0) {
                     http_set_error("empty host");
-                    goto error;
+                    return -1;
                 }
 
                 uri->host = http_uri_decode_component(start, toklen);
                 if (!uri->host)
-                    goto error;
+                    return -1;
 
                 break;
             }
@@ -285,18 +286,18 @@ http_uri_parse(const char *str, struct http_uri *uri) {
                 toklen = (size_t)(ptr - start);
                 if (toklen == 0) {
                     http_set_error("empty port");
-                    goto error;
+                    return -1;
                 }
 
                 uri->port = http_uri_decode_component(start, toklen);
                 if (!uri->port)
-                    goto error;
+                    return -1;
 
                 break;
             } else if (!http_uri_is_port_char((unsigned char)*ptr)) {
                 http_set_error("invalid character \\%hhu in port",
                                (unsigned char)*ptr);
-                goto error;
+                return -1;
             }
 
             ptr++;
@@ -313,7 +314,7 @@ path:
                 toklen = (size_t)(ptr - start);
                 uri->path = http_uri_decode_component(start, toklen);
                 if (!uri->path)
-                    goto error;
+                    return -1;
 
                 break;
             }
@@ -322,8 +323,6 @@ path:
         }
     } else {
         uri->path = http_strdup("/");
-        if (!uri->path)
-            goto error;
     }
 
     /* Query (optional) */
@@ -338,7 +337,7 @@ path:
         toklen = (size_t)(ptr - start);
         uri->query = http_uri_decode_component(start, toklen);
         if (!uri->query)
-            goto error;
+            return -1;
     }
 
     /* Fragment (optional) */
@@ -353,17 +352,13 @@ path:
         toklen = (size_t)(ptr - start);
         uri->fragment = http_uri_decode_component(start, toklen);
         if (!uri->fragment)
-            goto error;
+            return -1;
     }
 
     if (http_uri_finalize(uri) == -1)
-        goto error;
+        return -1;
 
     return 1;
-
-error:
-    http_uri_delete(uri);
-    return -1;
 }
 
 char *
