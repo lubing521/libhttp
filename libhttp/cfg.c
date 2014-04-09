@@ -42,7 +42,7 @@ http_cfg_init(struct http_cfg *cfg) {
     cfg->max_content_length = 16 * 1000 * 1000;
     cfg->max_chunk_length = 1000 * 1000;
 
-    cfg->bufferization = HTTP_BUFFERIZE_AUTO;
+    cfg->bufferization = HTTP_BUFFERIZE_ALWAYS;
 
     cfg->connection_timeout = 10000;
 }

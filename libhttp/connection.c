@@ -778,9 +778,7 @@ http_connection_preprocess_request(struct http_connection *connection,
     }
 
     /* Is the request bufferized ? */
-    msg->is_bufferized = route->options.bufferization == HTTP_BUFFERIZE_ALWAYS
-                      || (route->options.bufferization == HTTP_BUFFERIZE_AUTO
-                          && msg->is_body_chunked);
+    msg->is_bufferized = (route->options.bufferization == HTTP_BUFFERIZE_ALWAYS);
 
     return 0;
 }

@@ -70,7 +70,7 @@ main(int argc, char **argv) {
     struct http_cfg cfg;
     int opt;
 
-    bufferization = HTTP_BUFFERIZE_AUTO;
+    bufferization = HTTP_BUFFERIZE_ALWAYS;
 
     opterr = 0;
     while ((opt = getopt(argc, argv, "bhu")) != -1) {

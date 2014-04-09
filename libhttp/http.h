@@ -136,7 +136,6 @@ enum http_connection_option {
 };
 
 enum http_bufferization {
-    HTTP_BUFFERIZE_AUTO,
     HTTP_BUFFERIZE_ALWAYS,
     HTTP_BUFFERIZE_NEVER,
 };
