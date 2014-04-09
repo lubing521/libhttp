@@ -329,4 +329,19 @@ int http_connection_write_empty_body(struct http_connection *);
 
 int http_connection_write_file(struct http_connection *, int, const char *);
 
+/* MIME */
+struct http_media_type *http_media_type_new(const char *);
+void http_media_type_delete(struct http_media_type *);
+
+const char *http_media_type_string(const struct http_media_type *);
+const char *http_media_type_base_string(const struct http_media_type *);
+
+const char *http_media_type_get_type(const struct http_media_type *);
+const char *http_media_type_get_subtype(const struct http_media_type *);
+
+bool http_media_type_has_parameter(const struct http_media_type *,
+                                   const char *);
+const char *http_media_type_get_parameter(const struct http_media_type *,
+                                          const char *);
+
 #endif
