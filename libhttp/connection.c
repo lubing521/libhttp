@@ -471,7 +471,7 @@ http_connection_abort(struct http_connection *connection) {
     msg = connection->current_msg;
     headers_read = http_parser_are_headers_read(&connection->parser);
 
-    if (msg && headers_read && msg->is_bufferized && !msg->aborted) {
+    if (msg && headers_read && !msg->is_bufferized && !msg->aborted) {
         msg->aborted = true;
 
         if (connection->type == HTTP_CONNECTION_SERVER) {
