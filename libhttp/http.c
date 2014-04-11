@@ -257,6 +257,51 @@ http_header_value(const struct http_header *header) {
     return header->value;
 }
 
+char *
+http_format_content_disposition_attachment(const char *filename) {
+    const char *prefix, *suffix;
+    const char *iptr;
+    char *header, *optr;
+    size_t len, prefix_len, suffix_len;
+
+    prefix = "attachment; filename=\"";
+    suffix = "\"";
+
+    prefix_len = strlen(prefix);
+    suffix_len = strlen(suffix);
+
+    len = prefix_len;
+
+    iptr = filename;
+    while (*iptr != '\0') {
+        if (*iptr == '\\' || *iptr == '"')
+            len++;
+        len++;
+        iptr++;
+    }
+
+    len += suffix_len;
+
+    header = http_malloc(len + 1);
+    optr = header;
+
+    memcpy(optr, prefix, prefix_len);
+    optr += prefix_len;
+
+    iptr = filename;
+    while (*iptr != '\0') {
+        if (*iptr == '\\' || *iptr == '"')
+            *optr++ = '\\';
+        *optr++ = *iptr++;
+    }
+
+    memcpy(optr, suffix, suffix_len);
+    optr += suffix_len;
+    *optr = '\0';
+
+    return header;
+}
+
 const void *
 http_msg_content(const struct http_msg *msg) {
     return msg->content;

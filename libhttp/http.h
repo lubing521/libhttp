@@ -174,6 +174,9 @@ const void *http_msg_content(const struct http_msg *);
 const char *http_header_name(const struct http_header *);
 const char *http_header_value(const struct http_header *);
 
+char *http_format_content_disposition_attachment(const char *);
+
+
 struct http_form_data;
 
 bool http_msg_has_form_data(const struct http_msg *);

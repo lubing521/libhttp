@@ -4,6 +4,7 @@
 session.vim
 .tags
 
+/tests/content-disposition
 /tests/messages
 /tests/mime
 /tests/routes
