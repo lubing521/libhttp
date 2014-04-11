@@ -32,12 +32,6 @@ int http_now_ms(uint64_t *);
 /* Error handling */
 #define HTTP_ERROR_BUFSZ 1024
 
-/* Memory */
-void *http_malloc(size_t);
-void *http_calloc(size_t, size_t);
-void *http_realloc(void *, size_t);
-void http_free(void *);
-
 /* Strings */
 char *http_strdup(const char *);
 char *http_strndup(const char *, size_t);

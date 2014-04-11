@@ -43,6 +43,11 @@ extern const struct http_memory_allocator *http_default_memory_allocator;
 
 void http_set_memory_allocator(const struct http_memory_allocator *allocator);
 
+void *http_malloc(size_t);
+void *http_calloc(size_t, size_t);
+void *http_realloc(void *, size_t);
+void http_free(void *);
+
 /* Time */
 #define HTTP_RFC1123_DATE_BUFSZ 64
 
