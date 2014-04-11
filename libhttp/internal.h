@@ -154,7 +154,7 @@ struct http_msg {
     struct http_media_type *content_type;
 };
 
-void http_msg_init(struct http_msg *);
+void http_msg_init(struct http_msg *, enum http_msg_type);
 void http_msg_free(struct http_msg *);
 
 void http_msg_add_header(struct http_msg *, const struct http_header *);

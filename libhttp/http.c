@@ -574,8 +574,11 @@ http_response_free(struct http_response *response) {
 }
 
 void
-http_msg_init(struct http_msg *msg) {
+http_msg_init(struct http_msg *msg, enum http_msg_type type) {
     memset(msg, 0, sizeof(struct http_msg));
+
+    msg->is_bufferized = true;
+    msg->type = type;
 }
 
 void
@@ -815,8 +818,9 @@ http_parser_init(struct http_parser *parser, enum http_msg_type msg_type,
     memset(parser, 0, sizeof(struct http_parser));
 
     parser->cfg = cfg;
-    parser->msg.type = msg_type;
     parser->state = HTTP_PARSER_START;
+
+    http_msg_init(&parser->msg, msg_type);
 
     return 0;
 }
