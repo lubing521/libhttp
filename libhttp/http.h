@@ -88,6 +88,7 @@ enum http_status_code {
     HTTP_NO_CONTENT                      = 204,
     HTTP_RESET_CONTENT                   = 205,
     HTTP_PARTIAL_CONTENT                 = 206,
+    HTTP_MULTI_STATUS                    = 207, /* RFC 4918 */
 
     HTTP_MULTIPLE_CHOICES                = 300,
     HTTP_MOVED_PERMANENTLY               = 301,
@@ -115,6 +116,9 @@ enum http_status_code {
     HTTP_UNSUPPORTED_MEDIA_TYPE          = 415,
     HTTP_REQUEST_RANGE_NOT_SATISFIABLE   = 416,
     HTTP_EXPECTATION_FAILED              = 417,
+    HTTP_UNPROCESSABLE_ENTITY            = 422, /* RFC 4918 */
+    HTTP_LOCKED                          = 423, /* RFC 4918 */
+    HTTP_FAILED_DEPENDENCY               = 424, /* RFC 4918 */
     HTTP_PRECONDITION_REQUIRED           = 428, /* RFC 6585 */
     HTTP_TOO_MANY_REQUESTS               = 429, /* RFC 6585 */
     HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE = 431, /* RFC 6585 */
@@ -125,6 +129,7 @@ enum http_status_code {
     HTTP_SERVICE_UNAVAILABLE             = 503,
     HTTP_GATEWAY_TIMEOUT                 = 504,
     HTTP_HTTP_VERSION_NOT_SUPPORTED      = 505,
+    HTTP_INSUFFICIENT_STORAGE            = 507, /* RFC 4918 */
     HTTP_NETWORK_AUTHENTICATION_REQUIRED = 511, /* RFC 6585 */
 };
 
