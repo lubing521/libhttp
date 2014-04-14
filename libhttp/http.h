@@ -326,7 +326,8 @@ void http_connection_error(struct http_connection *, const char *, ...)
 
 int http_connection_write_error(struct http_connection *,
                                 enum http_status_code,
-                                const char *, ...);
+                                const char *, ...)
+    __attribute__((format(printf, 3, 4)));
 
 int http_connection_write_request(struct http_connection *,
                                   enum http_method, const struct http_uri *);
