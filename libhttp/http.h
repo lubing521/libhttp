@@ -264,7 +264,8 @@ struct http_cfg {
     size_t nb_content_decoders;
 };
 
-void http_cfg_init(struct http_cfg *cfg);
+void http_cfg_init_server(struct http_cfg *cfg);
+void http_cfg_init_client(struct http_cfg *cfg);
 void http_cfg_free(struct http_cfg *cfg);
 
 void http_cfg_content_decoder_add(struct http_cfg *, const char *,

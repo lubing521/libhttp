@@ -19,32 +19,22 @@
 #include "http.h"
 #include "internal.h"
 
+static void http_cfg_init_base(struct http_cfg *);
+
 void
-http_cfg_init(struct http_cfg *cfg) {
-    memset(cfg, 0, sizeof(struct http_cfg));
-
-    http_cfg_content_decoder_add(cfg, "application/x-www-form-urlencoded",
-                                     http_content_form_data_decode,
-                                     http_content_form_data_delete);
-
-    cfg->host = "localhost";
-    cfg->port = "80";
+http_cfg_init_server(struct http_cfg *cfg) {
+    http_cfg_init_base(cfg);
 
     cfg->u.server.connection_backlog = 5;
     cfg->u.server.max_request_uri_length = 2048;
     cfg->u.server.error_body_writer = http_default_error_body_writer;
+}
+
+void
+http_cfg_init_client(struct http_cfg *cfg) {
+    http_cfg_init_base(cfg);
 
     cfg->u.client.max_reason_phrase_length = 128;
-
-    cfg->max_header_name_length = 128;
-    cfg->max_header_value_length = 4096;
-
-    cfg->max_content_length = 16 * 1000 * 1000;
-    cfg->max_chunk_length = 1000 * 1000;
-
-    cfg->bufferization = HTTP_BUFFERIZE_ALWAYS;
-
-    cfg->connection_timeout = 10000;
 }
 
 void
@@ -91,4 +81,26 @@ http_cfg_content_decoder_get(const struct http_cfg *cfg,
     }
 
     return NULL;
+}
+
+static void
+http_cfg_init_base(struct http_cfg *cfg) {
+    memset(cfg, 0, sizeof(struct http_cfg));
+
+    http_cfg_content_decoder_add(cfg, "application/x-www-form-urlencoded",
+                                     http_content_form_data_decode,
+                                     http_content_form_data_delete);
+
+    cfg->host = "localhost";
+    cfg->port = "80";
+
+    cfg->max_header_name_length = 128;
+    cfg->max_header_value_length = 4096;
+
+    cfg->max_content_length = 16 * 1000 * 1000;
+    cfg->max_chunk_length = 1000 * 1000;
+
+    cfg->bufferization = HTTP_BUFFERIZE_ALWAYS;
+
+    cfg->connection_timeout = 10000;
 }

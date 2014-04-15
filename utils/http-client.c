@@ -137,7 +137,7 @@ httpc_process_uri(struct http_uri *uri) {
     struct http_client *client;
     struct http_cfg cfg;
 
-    http_cfg_init(&cfg);
+    http_cfg_init_client(&cfg);
 
     cfg.host = http_uri_host(uri);
     if (!cfg.host)

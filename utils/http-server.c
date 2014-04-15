@@ -92,7 +92,7 @@ main(int argc, char **argv) {
         }
     }
 
-    http_cfg_init(&cfg);
+    http_cfg_init_server(&cfg);
 
     cfg.port = "8080";
     cfg.error_hook = https_on_error;

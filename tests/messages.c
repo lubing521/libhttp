@@ -30,7 +30,7 @@ main(int argc, char **argv) {
     enum http_msg_type msg_type;
     bool skip_header_processing;
 
-    http_cfg_init(&cfg);
+    http_cfg_init_server(&cfg);
 
     cfg.u.server.max_request_uri_length = 8;
 
