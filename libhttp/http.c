@@ -234,6 +234,20 @@ http_msg_get_named_parameter(const struct http_msg *msg, const char *name) {
     return NULL;
 }
 
+bool
+http_msg_has_query_parameter(const struct http_msg *msg, const char *name) {
+    for (size_t i = 0; i < msg->u.request.nb_query_parameters; i++) {
+        struct http_query_parameter *parameter;
+
+        parameter = msg->u.request.query_parameters + i;
+
+        if (strcmp(parameter->name, name) == 0)
+            return true;
+    }
+
+    return false;
+}
+
 const char *
 http_msg_get_query_parameter(const struct http_msg *msg, const char *name) {
     /* The behaviour to adopt when two query parameters have the same name is
