@@ -280,6 +280,14 @@ void http_uri_delete(struct http_uri *);
 const char *http_uri_host(const struct http_uri *);
 const char *http_uri_port(const struct http_uri *);
 
+void http_uri_set_scheme(struct http_uri *, const char *);
+void http_uri_set_user(struct http_uri *, const char *);
+void http_uri_set_password(struct http_uri *, const char *);
+void http_uri_set_host(struct http_uri *, const char *);
+void http_uri_set_port(struct http_uri *, const char *);
+void http_uri_set_path(struct http_uri *, const char *);
+void http_uri_set_fragment(struct http_uri *, const char *);
+
 char *http_uri_encode(const struct http_uri *);
 char *http_uri_encode_path_and_query(const struct http_uri *);
 

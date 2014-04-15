@@ -40,9 +40,11 @@ http_uri_new(const char *str) {
     uri = http_malloc(sizeof(struct http_uri));
     memset(uri, 0, sizeof(struct http_uri));
 
-    if (http_uri_parse(str, uri) == -1) {
-        http_uri_delete(uri);
-        return NULL;
+    if (str) {
+        if (http_uri_parse(str, uri) == -1) {
+            http_uri_delete(uri);
+            return NULL;
+        }
     }
 
     return uri;
@@ -74,6 +76,62 @@ http_uri_host(const struct http_uri *uri) {
 const char *
 http_uri_port(const struct http_uri *uri) {
     return uri->port;
+}
+
+void
+http_uri_set_scheme(struct http_uri *uri, const char *scheme) {
+    if (uri->scheme)
+        http_free(uri->scheme);
+
+    uri->scheme = http_strdup(scheme);
+}
+
+void
+http_uri_set_user(struct http_uri *uri, const char *user) {
+    if (uri->user)
+        http_free(uri->user);
+
+    uri->user = http_strdup(user);
+}
+
+void
+http_uri_set_password(struct http_uri *uri, const char *password) {
+    if (uri->password)
+        http_free(uri->password);
+
+    uri->password = http_strdup(password);
+}
+
+void
+http_uri_set_host(struct http_uri *uri, const char *host) {
+    if (uri->host)
+        http_free(uri->host);
+
+    uri->host = http_strdup(host);
+}
+
+void
+http_uri_set_port(struct http_uri *uri, const char *port) {
+    if (uri->port)
+        http_free(uri->port);
+
+    uri->port = http_strdup(port);
+}
+
+void
+http_uri_set_path(struct http_uri *uri, const char *path) {
+    if (uri->path)
+        http_free(uri->path);
+
+    uri->path = http_strdup(path);
+}
+
+void
+http_uri_set_fragment(struct http_uri *uri, const char *fragment) {
+    if (uri->fragment)
+        http_free(uri->fragment);
+
+    uri->fragment = http_strdup(fragment);
 }
 
 static int
