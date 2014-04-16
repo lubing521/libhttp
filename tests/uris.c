@@ -50,7 +50,10 @@ main(int argc, char **argv) {
 
     HTTPT_BEGIN("/foo/bar?a=1&b=2");
     HTTPT_IS_EQUAL_STRING(uri->path, "/foo/bar");
-    HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "a"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "a"), "1");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "b"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "b"), "2");
     HTTPT_END();
 
     HTTPT_BEGIN("http://127.0.0.1");
@@ -149,21 +152,30 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
     HTTPT_IS_EQUAL_STRING(uri->path, "/");
-    HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "a"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "a"), "1");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "b"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "b"), "2");
     HTTPT_END();
 
     HTTPT_BEGIN("http://example.com/a/b/c?a=1&b=2");
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
     HTTPT_IS_EQUAL_STRING(uri->path, "/a/b/c");
-    HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "a"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "a"), "1");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "b"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "b"), "2");
     HTTPT_END();
 
     HTTPT_BEGIN("http://example.com/a/b/c?a=1&b=2#foo");
     HTTPT_IS_EQUAL_STRING(uri->scheme, "http");
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
     HTTPT_IS_EQUAL_STRING(uri->path, "/a/b/c");
-    HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "a"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "a"), "1");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "b"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "b"), "2");
     HTTPT_IS_EQUAL_STRING(uri->fragment, "foo");
     HTTPT_END();
 
@@ -174,7 +186,10 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_STRING(uri->host, "example.com");
     HTTPT_IS_EQUAL_STRING(uri->port, "8080");
     HTTPT_IS_EQUAL_STRING(uri->path, "/path");
-    HTTPT_IS_EQUAL_STRING(uri->query, "a=1&b=2");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "a"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "a"), "1");
+    HTTPT_IS_TRUE(http_uri_has_query_parameter(uri, "b"));
+    HTTPT_IS_EQUAL_STRING(http_uri_query_parameter(uri, "b"), "2");
     HTTPT_END();
 
     HTTPT_BEGIN("%68%74%74%70://%65%78%61%6d%70%6c%65.%63%6f%6D");
@@ -296,6 +311,14 @@ main(int argc, char **argv) {
     HTTPT_IS_EQUAL_UINT(nb_parameters, 1);
     HTTPT_IS_EQUAL_STRING(parameters[0].name, "a b ");
     HTTPT_IS_EQUAL_STRING(parameters[0].value, " état");
+    HTTPT_END();
+
+    HTTPT_BEGIN("%3d=%20%26&%3b=++");
+    HTTPT_IS_EQUAL_UINT(nb_parameters, 2);
+    HTTPT_IS_EQUAL_STRING(parameters[0].name, "=");
+    HTTPT_IS_EQUAL_STRING(parameters[0].value, " &");
+    HTTPT_IS_EQUAL_STRING(parameters[1].name, ";");
+    HTTPT_IS_EQUAL_STRING(parameters[1].value, "  ");
     HTTPT_END();
 
 #define HTTPT_INVALID_QUERY(str_)                                             \

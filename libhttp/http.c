@@ -136,30 +136,6 @@ http_msg_version(const struct http_msg *msg) {
     return msg->version;
 }
 
-enum http_method
-http_request_method(const struct http_msg *msg) {
-    assert(msg->type == HTTP_MSG_REQUEST);
-    return msg->u.request.method;
-}
-
-const char *
-http_request_uri(const struct http_msg *msg) {
-    assert(msg->type == HTTP_MSG_REQUEST);
-    return msg->u.request.uri_string;
-}
-
-enum http_status_code
-http_response_status_code(const struct http_msg *msg) {
-    assert(msg->type == HTTP_MSG_RESPONSE);
-    return msg->u.response.status_code;
-}
-
-const char *
-http_response_reason_phrase(const struct http_msg *msg) {
-    assert(msg->type == HTTP_MSG_RESPONSE);
-    return msg->u.response.reason_phrase;
-}
-
 size_t
 http_msg_nb_headers(const struct http_msg *msg) {
     return msg->nb_headers;
@@ -218,59 +194,6 @@ http_msg_body(const struct http_msg *msg) {
 size_t
 http_msg_body_length(const struct http_msg *msg) {
     return msg->body_length;
-}
-
-const char *
-http_msg_get_named_parameter(const struct http_msg *msg, const char *name) {
-    for (size_t i = 0; i < msg->u.request.nb_named_parameters; i++) {
-        struct http_named_parameter *parameter;
-
-        parameter = msg->u.request.named_parameters + i;
-
-        if (strcmp(parameter->name, name) == 0)
-            return parameter->value;
-    }
-
-    return NULL;
-}
-
-bool
-http_msg_has_query_parameter(const struct http_msg *msg, const char *name) {
-    for (size_t i = 0; i < msg->u.request.nb_query_parameters; i++) {
-        struct http_query_parameter *parameter;
-
-        parameter = msg->u.request.query_parameters + i;
-
-        if (strcmp(parameter->name, name) == 0)
-            return true;
-    }
-
-    return false;
-}
-
-const char *
-http_msg_get_query_parameter(const struct http_msg *msg, const char *name) {
-    /* The behaviour to adopt when two query parameters have the same name is
-     * not defined. Depending on the HTTP API, the value retained in this case
-     * can be:
-     *
-     * - The first value.
-     * - The second one.
-     * - A concatenation fo the first one, a comma, and the second one.
-     * - An array containing both values.
-     *
-     * We choose the first solution because it is the simpler. */
-
-    for (size_t i = 0; i < msg->u.request.nb_query_parameters; i++) {
-        struct http_query_parameter *parameter;
-
-        parameter = msg->u.request.query_parameters + i;
-
-        if (strcmp(parameter->name, name) == 0)
-            return parameter->value;
-    }
-
-    return NULL;
 }
 
 const char *
@@ -340,6 +263,66 @@ http_msg_has_form_data(const struct http_msg *msg) {
 
     return strcmp(http_media_type_base_string(msg->content_type),
                   "application/x-www-form-urlencoded") == 0;
+}
+
+enum http_method
+http_request_method(const struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_REQUEST);
+    return msg->u.request.method;
+}
+
+const char *
+http_request_uri(const struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_REQUEST);
+    return msg->u.request.uri_string;
+}
+
+const char *
+http_request_named_parameter(const struct http_msg *msg, const char *name) {
+    assert(msg->type == HTTP_MSG_REQUEST);
+
+    for (size_t i = 0; i < msg->u.request.nb_named_parameters; i++) {
+        struct http_named_parameter *parameter;
+
+        parameter = msg->u.request.named_parameters + i;
+
+        if (strcmp(parameter->name, name) == 0)
+            return parameter->value;
+    }
+
+    return NULL;
+}
+
+bool
+http_request_has_query_parameter(const struct http_msg *msg, const char *name) {
+    assert(msg->type == HTTP_MSG_REQUEST);
+
+    if (!msg->u.request.uri)
+        return false;
+
+    return http_uri_has_query_parameter(msg->u.request.uri, name);
+}
+
+const char *
+http_request_query_parameter(const struct http_msg *msg, const char *name) {
+    assert(msg->type == HTTP_MSG_REQUEST);
+
+    if (!msg->u.request.uri)
+        return false;
+
+    return http_uri_query_parameter(msg->u.request.uri, name);
+}
+
+enum http_status_code
+http_response_status_code(const struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_RESPONSE);
+    return msg->u.response.status_code;
+}
+
+const char *
+http_response_reason_phrase(const struct http_msg *msg) {
+    assert(msg->type == HTTP_MSG_RESPONSE);
+    return msg->u.response.reason_phrase;
 }
 
 char *
@@ -588,10 +571,6 @@ http_request_free(struct http_request *request) {
     for (size_t i = 0; i < request->nb_named_parameters; i++)
         http_named_parameter_free(request->named_parameters + i);
     http_free(request->named_parameters);
-
-    for (size_t i = 0; i < request->nb_query_parameters; i++)
-        http_query_parameter_free(request->query_parameters + i);
-    http_free(request->query_parameters);
 }
 
 void

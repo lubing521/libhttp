@@ -156,12 +156,6 @@ struct http_connection;
 
 enum http_version http_msg_version(const struct http_msg *);
 
-enum http_method http_request_method(const struct http_msg *);
-const char *http_request_uri(const struct http_msg *);
-
-enum http_status_code http_response_status_code(const struct http_msg *);
-const char *http_response_reason_phrase(const struct http_msg *);
-
 size_t http_msg_nb_headers(const struct http_msg *);
 const struct http_header *http_msg_header(const struct http_msg *, size_t);
 const char *http_msg_get_header(const struct http_msg *, const char *);
@@ -176,11 +170,19 @@ const struct http_media_type *http_msg_content_type(const struct http_msg *);
 const char *http_msg_body(const struct http_msg *);
 size_t http_msg_body_length(const struct http_msg *);
 
-const char *http_msg_get_named_parameter(const struct http_msg *, const char *);
-bool http_msg_has_query_parameter(const struct http_msg *, const char *);
-const char *http_msg_get_query_parameter(const struct http_msg *, const char *);
-
 const void *http_msg_content(const struct http_msg *);
+bool http_msg_has_form_data(const struct http_msg *);
+
+enum http_method http_request_method(const struct http_msg *);
+const char *http_request_uri(const struct http_msg *);
+
+const char *http_request_named_parameter(const struct http_msg *,
+                                         const char *);
+bool http_request_has_query_parameter(const struct http_msg *, const char *);
+const char *http_request_query_parameter(const struct http_msg *, const char *);
+
+enum http_status_code http_response_status_code(const struct http_msg *);
+const char *http_response_reason_phrase(const struct http_msg *);
 
 const char *http_header_name(const struct http_header *);
 const char *http_header_value(const struct http_header *);
@@ -190,7 +192,6 @@ char *http_format_content_disposition_attachment(const char *);
 
 struct http_form_data;
 
-bool http_msg_has_form_data(const struct http_msg *);
 bool http_form_data_has_parameter(const struct http_form_data *,
                                   const char *);
 const char *http_form_data_get_parameter(const struct http_form_data *,
@@ -280,6 +281,9 @@ void http_uri_delete(struct http_uri *);
 
 const char *http_uri_host(const struct http_uri *);
 const char *http_uri_port(const struct http_uri *);
+
+bool http_uri_has_query_parameter(const struct http_uri *, const char *);
+const char *http_uri_query_parameter(const struct http_uri *, const char *);
 
 void http_uri_set_scheme(struct http_uri *, const char *);
 void http_uri_set_user(struct http_uri *, const char *);

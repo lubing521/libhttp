@@ -14,7 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <alloca.h>
 #include <ctype.h>
 #include <string.h>
 
@@ -23,7 +22,7 @@
 
 static int http_uri_parse(const char *, struct http_uri *);
 static char *http_uri_decode_component(const char *, size_t);
-static int http_uri_encode_component(const char *, struct bf_buffer *);
+static void http_uri_encode_component(const char *, struct bf_buffer *);
 static int http_uri_finalize(struct http_uri *);
 
 static int http_read_hex_digit(unsigned char, int *);
@@ -32,6 +31,7 @@ static bool http_uri_is_scheme_char(unsigned char);
 static bool http_uri_is_ipv4_addr_char(unsigned char);
 static bool http_uri_is_ipv6_addr_char(unsigned char);
 static bool http_uri_is_port_char(unsigned char);
+static bool http_uri_is_query_component_char(unsigned char);
 
 struct http_uri *
 http_uri_new(const char *str) {
@@ -61,8 +61,11 @@ http_uri_delete(struct http_uri *uri) {
     http_free(uri->host);
     http_free(uri->port);
     http_free(uri->path);
-    http_free(uri->query);
     http_free(uri->fragment);
+
+    for (size_t i = 0; i < uri->nb_query_parameters; i++)
+        http_query_parameter_free(uri->query_parameters + i);
+    http_free(uri->query_parameters);
 
     memset(uri, 0, sizeof(struct http_uri));
     http_free(uri);
@@ -76,6 +79,41 @@ http_uri_host(const struct http_uri *uri) {
 const char *
 http_uri_port(const struct http_uri *uri) {
     return uri->port;
+}
+
+bool
+http_uri_has_query_parameter(const struct http_uri *uri, const char *name) {
+    for (size_t i = 0; i < uri->nb_query_parameters; i++) {
+        if (strcmp(uri->query_parameters[i].name, name) == 0)
+            return true;
+    }
+
+    return false;
+}
+
+const char *
+http_uri_query_parameter(const struct http_uri *uri, const char *name) {
+    /* The behaviour to adopt when two query parameters have the same name is
+     * not defined. Depending on the HTTP API, the value retained in this case
+     * can be:
+     *
+     * - The first value.
+     * - The second one.
+     * - A concatenation fo the first one, a comma, and the second one.
+     * - An array containing both values.
+     *
+     * We choose the first solution because it is the simpler. */
+
+    for (size_t i = 0; i < uri->nb_query_parameters; i++) {
+        struct http_query_parameter *parameter;
+
+        parameter = uri->query_parameters + i;
+
+        if (strcmp(parameter->name, name) == 0)
+            return parameter->value;
+    }
+
+    return NULL;
 }
 
 void
@@ -385,6 +423,8 @@ path:
 
     /* Query (optional) */
     if (*ptr == '?') {
+        char *query;
+
         ptr++;
 
         start = ptr;
@@ -393,9 +433,16 @@ path:
             ptr++;
 
         toklen = (size_t)(ptr - start);
-        uri->query = http_uri_decode_component(start, toklen);
-        if (!uri->query)
+        query = http_strndup(start, toklen);
+
+        if (http_query_parameters_parse(query,
+                                        &uri->query_parameters,
+                                        &uri->nb_query_parameters) == -1) {
+            http_free(query);
             return -1;
+        }
+
+        http_free(query);
     }
 
     /* Fragment (optional) */
@@ -469,15 +516,63 @@ error:
     return NULL;
 }
 
-static int
-http_uri_encode_component(const char *str, struct bf_buffer *buf) {
-    const char *hex_digits;
+void
+http_uri_encode_query_component(const char *str, struct bf_buffer *buf) {
+    static const char *hex_digits = "0123456789abcdef";
+
     const char *iptr;
     char *optr;
     char *tmp;
     size_t len;
 
-    hex_digits = "01234567890abcdef";
+    /* Compute the size of the encoded string */
+    len = 0;
+    iptr = str;
+    while (*iptr != '\0') {
+        if (http_uri_is_query_component_char((unsigned char)*iptr)) {
+            len++;
+        } else {
+            len += 3; /* '%xx' */
+        }
+
+        iptr++;
+    }
+
+    /* Encode the string */
+    tmp = http_malloc(len);
+
+    iptr = str;
+    optr = tmp;
+    while (*iptr != '\0') {
+        if (http_uri_is_query_component_char((unsigned char)*iptr)) {
+            *optr++ = *iptr;
+        } else if (*iptr == ' ') {
+            *optr++ = '+';
+        } else {
+            unsigned char c;
+
+            c = (unsigned char)*iptr;
+
+            *optr++ = '%';
+            *optr++ = hex_digits[c >> 4];
+            *optr++ = hex_digits[c & 0xf];
+        }
+
+        iptr++;
+    }
+
+    bf_buffer_add(buf, tmp, len);
+    http_free(tmp);
+}
+
+static void
+http_uri_encode_component(const char *str, struct bf_buffer *buf) {
+    static const char *hex_digits = "0123456789abcdef";
+
+    const char *iptr;
+    char *optr;
+    char *tmp;
+    size_t len;
 
     /* Compute the size of the encoded string */
     len = 0;
@@ -492,13 +587,8 @@ http_uri_encode_component(const char *str, struct bf_buffer *buf) {
         iptr++;
     }
 
-    if (len > 16 * 1024) {
-        http_set_error("uri component too large");
-        return -1;
-    }
-
     /* Encode the string */
-    tmp = alloca(len);
+    tmp = http_malloc(len);
 
     iptr = str;
     optr = tmp;
@@ -520,7 +610,7 @@ http_uri_encode_component(const char *str, struct bf_buffer *buf) {
     }
 
     bf_buffer_add(buf, tmp, len);
-    return 0;
+    http_free(tmp);
 }
 
 char *
@@ -537,62 +627,55 @@ http_uri_encode(const struct http_uri *uri) {
 
     /* Scheme */
     if (uri->scheme) {
-        if (http_uri_encode_component(uri->scheme, buf) == -1)
-            goto error;
-
-        if (bf_buffer_add_string(buf, "://") == -1)
-            goto error;
+        http_uri_encode_component(uri->scheme, buf);
+        bf_buffer_add_string(buf, "://");
     }
 
     /* User and password */
     if (uri->user) {
-        if (http_uri_encode_component(uri->user, buf) == -1)
-            goto error;
+        http_uri_encode_component(uri->user, buf);
 
         if (uri->password) {
-            if (bf_buffer_add(buf, ":", 1) == -1)
-                goto error;
-
-            if (http_uri_encode_component(uri->password, buf) == -1)
-                goto error;
+            bf_buffer_add(buf, ":", 1);
+            http_uri_encode_component(uri->password, buf);
         }
     }
 
     /* Host and port */
-    if (http_uri_encode_component(uri->host, buf) == -1)
-        goto error;
+    http_uri_encode_component(uri->host, buf);
 
     if (uri->port) {
-        if (bf_buffer_add(buf, ":", 1) == -1)
-            goto error;
-
-        if (http_uri_encode_component(uri->port, buf) == -1)
-            goto error;
+        bf_buffer_add(buf, ":", 1);
+        http_uri_encode_component(uri->port, buf);
     }
 
     /* Path, query and fragment */
     if (uri->path) {
-        if (http_uri_encode_component(uri->path, buf) == -1)
-            goto error;
+        http_uri_encode_component(uri->path, buf);
     } else {
-        if (bf_buffer_add(buf, "/", 1) == -1)
-            goto error;
+        bf_buffer_add(buf, "/", 1);
     }
 
-    if (uri->query) {
-        if (bf_buffer_add(buf, "?", 1) == -1)
-            goto error;
+    if (uri->nb_query_parameters > 0) {
+        bf_buffer_add(buf, "?", 1);
 
-        if (http_uri_encode_component(uri->query, buf) == -1)
-            goto error;
+        for (size_t i = 0; i < uri->nb_query_parameters; i++) {
+            struct http_query_parameter *parameter;
+
+            parameter = uri->query_parameters + i;
+
+            if (i > 0)
+                bf_buffer_add(buf, "&", 1);
+
+            http_uri_encode_query_component(parameter->name, buf);
+            bf_buffer_add(buf, "=", 1);
+            http_uri_encode_query_component(parameter->value, buf);
+        }
     }
 
     if (uri->fragment) {
-        if (bf_buffer_add(buf, "#", 1) == -1)
-            goto error;
-
-        if (http_uri_encode_component(uri->fragment, buf) == -1)
-            goto error;
+        bf_buffer_add(buf, "#", 1);
+        http_uri_encode_component(uri->fragment, buf);
     }
 
     str = bf_buffer_dup_string(buf);
@@ -604,10 +687,6 @@ http_uri_encode(const struct http_uri *uri) {
 
     bf_buffer_delete(buf);
     return str;
-
-error:
-    bf_buffer_delete(buf);
-    return NULL;
 }
 
 char *
@@ -626,27 +705,33 @@ http_uri_encode_path_and_query(const struct http_uri *uri) {
         return NULL;
     }
     if (uri->path) {
-        if (http_uri_encode_component(uri->path, buf) == -1)
-            goto error;
+        http_uri_encode_component(uri->path, buf);
     } else {
-        if (bf_buffer_add(buf, "/", 1) == -1)
-            goto error;
+        bf_buffer_add(buf, "/", 1);
     }
 
-    if (uri->query) {
-        if (bf_buffer_add(buf, "?", 1) == -1)
-            goto error;
+    if (uri->nb_query_parameters > 0) {
+        bf_buffer_add(buf, "?", 1);
 
-        if (http_uri_encode_component(uri->query, buf) == -1)
-            goto error;
+        for (size_t i = 0; i < uri->nb_query_parameters; i++) {
+            struct http_query_parameter *parameter;
+
+            parameter = uri->query_parameters + i;
+
+            if (i > 0)
+                bf_buffer_add(buf, "&", 1);
+
+            http_uri_encode_query_component(parameter->name, buf);
+            bf_buffer_add(buf, "=", 1);
+            http_uri_encode_query_component(parameter->value, buf);
+        }
     }
 
     if (uri->fragment) {
         if (bf_buffer_add(buf, "#", 1) == -1)
             goto error;
 
-        if (http_uri_encode_component(uri->fragment, buf) == -1)
-            goto error;
+        http_uri_encode_component(uri->fragment, buf);
     }
 
     str = bf_buffer_dup_string(buf);
@@ -760,4 +845,11 @@ http_uri_is_ipv6_addr_char(unsigned char c) {
 static bool
 http_uri_is_port_char(unsigned char c) {
     return c >= '0' && c <= '9';
+}
+
+static bool
+http_uri_is_query_component_char(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+        || (c >= '0' && c <= '9')
+        || c == '.' || c == '-' || c == '~' || c == '_';
 }

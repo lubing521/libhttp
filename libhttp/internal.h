@@ -87,16 +87,6 @@ struct http_named_parameter {
 
 void http_named_parameter_free(struct http_named_parameter *);
 
-struct http_query_parameter {
-    char *name;
-    char *value;
-};
-
-void http_query_parameter_free(struct http_query_parameter *);
-
-int http_query_parameters_parse(const char *, struct http_query_parameter **,
-                                size_t *);
-
 struct http_request {
     enum http_method method;
     char *uri_string;
@@ -105,9 +95,6 @@ struct http_request {
 
     struct http_named_parameter *named_parameters;
     size_t nb_named_parameters;
-
-    struct http_query_parameter *query_parameters;
-    size_t nb_query_parameters;
 
     bool expects_100_continue;
 };
@@ -386,6 +373,16 @@ void http_client_trace(const struct http_client *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
 /* URIs */
+struct http_query_parameter {
+    char *name;
+    char *value;
+};
+
+void http_query_parameter_free(struct http_query_parameter *);
+
+int http_query_parameters_parse(const char *, struct http_query_parameter **,
+                                size_t *);
+
 struct http_uri {
     char *scheme;
     char *user;
@@ -393,10 +390,13 @@ struct http_uri {
     char *host;
     char *port;
     char *path;
-    char *query;
     char *fragment;
+
+    struct http_query_parameter *query_parameters;
+    size_t nb_query_parameters;
 };
 
 char *http_uri_decode_query_component(const char *, size_t);
+void http_uri_encode_query_component(const char *, struct bf_buffer *);
 
 #endif
