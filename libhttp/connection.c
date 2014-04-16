@@ -326,9 +326,12 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
 
     ret = bf_buffer_read(connection->rbuf, connection->sock, BUFSIZ);
     if (ret == -1) {
-        http_connection_abort(connection);
-        http_connection_error(connection, "cannot read socket: %s",
-                              strerror(errno));
+        if (errno != ECONNRESET) {
+            http_connection_abort(connection);
+            http_connection_error(connection, "cannot read socket: %s",
+                                  strerror(errno));
+        }
+
         http_connection_delete(connection);
         return;
     }
