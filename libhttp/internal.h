@@ -239,6 +239,7 @@ struct http_connection {
 
     struct http_msg *current_msg;
     const struct http_route *current_route;
+    bool msg_handler_called;
 };
 
 struct http_connection *http_connection_new(enum http_connection_type,

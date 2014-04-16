@@ -141,11 +141,22 @@ http_connection_get_cfg(const struct http_connection *connection) {
 void
 http_connection_check_for_timeout(struct http_connection *connection,
                                   uint64_t now) {
+    const struct http_cfg *cfg;
     uint64_t diff;
 
+    assert(connection->type == HTTP_CONNECTION_SERVER);
+
+    cfg = http_connection_get_cfg(connection);
+
     diff = now - connection->last_activity;
-    if (diff > connection->server->cfg->connection_timeout) {
-        http_connection_write_error(connection, HTTP_REQUEST_TIMEOUT, NULL);
+    if (diff > cfg->connection_timeout) {
+        if (!connection->msg_handler_called
+         && (connection->parser.state == HTTP_PARSER_HEADER
+          || connection->parser.state == HTTP_PARSER_BODY
+          || connection->parser.state == HTTP_PARSER_TRAILER)) {
+            http_connection_write_error(connection, HTTP_REQUEST_TIMEOUT, NULL);
+        }
+
         http_connection_shutdown(connection);
     }
 }
@@ -782,6 +793,8 @@ http_connection_call_request_handler(struct http_connection *connection,
 
     arg = connection->server->route_base->msg_handler_arg;
     connection->current_route->msg_handler(connection, msg, arg);
+
+    connection->msg_handler_called = true;
 }
 
 static void
@@ -800,6 +813,8 @@ http_connection_call_response_handler(struct http_connection *connection,
 
     arg = cfg->u.client.response_handler_arg;
     cfg->u.client.response_handler(connection->client, msg, arg);
+
+    connection->msg_handler_called = true;
 }
 
 static void
@@ -851,6 +866,7 @@ http_connection_on_msg_processed(struct http_connection *connection) {
 
     connection->current_msg = NULL;
     connection->current_route = NULL;
+    connection->msg_handler_called = false;
 }
 
 static int
