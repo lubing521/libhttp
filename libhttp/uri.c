@@ -172,6 +172,29 @@ http_uri_set_fragment(struct http_uri *uri, const char *fragment) {
     uri->fragment = http_strdup(fragment);
 }
 
+void
+http_uri_add_query_parameter(struct http_uri *uri,
+                             const char *name, const char *value) {
+    struct http_query_parameter *parameters, *parameter;
+
+    if (uri->nb_query_parameters == 0) {
+        parameters = http_malloc(sizeof(struct http_query_parameter));
+    } else {
+        size_t nsz;
+
+        nsz = (uri->nb_query_parameters + 1)
+            * sizeof(struct http_query_parameter);
+        parameters = http_realloc(uri->query_parameters, nsz);
+    }
+
+    parameter = parameters + uri->nb_query_parameters;
+    parameter->name = http_strdup(name);
+    parameter->value = http_strdup(value);
+
+    uri->query_parameters = parameters;
+    uri->nb_query_parameters++;
+}
+
 static int
 http_uri_parse(const char *str, struct http_uri *uri) {
     const char *ptr, *start, *colon;

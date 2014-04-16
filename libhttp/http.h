@@ -293,6 +293,9 @@ void http_uri_set_port(struct http_uri *, const char *);
 void http_uri_set_path(struct http_uri *, const char *);
 void http_uri_set_fragment(struct http_uri *, const char *);
 
+void http_uri_add_query_parameter(struct http_uri *,
+                                  const char *, const char *);
+
 char *http_uri_encode(const struct http_uri *);
 char *http_uri_encode_path_and_query(const struct http_uri *);
 
