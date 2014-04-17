@@ -276,6 +276,29 @@ http_msg_has_form_data(const struct http_msg *msg) {
                   "application/x-www-form-urlencoded") == 0;
 }
 
+int
+http_msg_content_disposition_filename(const struct http_msg *msg,
+                                      char **pfilename) {
+    struct http_pvalue pvalue;
+    const char *str, *filename;
+
+    str = http_msg_get_header(msg, "Content-Disposition");
+    if (!str)
+        return 0;
+
+    if (http_pvalue_parse(&pvalue, str, NULL) == -1)
+        return -1;
+
+    filename = http_pvalue_get_parameter(&pvalue, "filename");
+    if (!filename)
+        return 0;
+
+    *pfilename = http_strdup(filename);
+
+    http_pvalue_free(&pvalue);
+    return 1;
+}
+
 enum http_method
 http_request_method(const struct http_msg *msg) {
     assert(msg->type == HTTP_MSG_REQUEST);

@@ -169,6 +169,8 @@ size_t http_msg_body_length(const struct http_msg *);
 const void *http_msg_content(const struct http_msg *);
 bool http_msg_has_form_data(const struct http_msg *);
 
+int http_msg_content_disposition_filename(const struct http_msg *, char **);
+
 enum http_method http_request_method(const struct http_msg *);
 const char *http_request_uri(const struct http_msg *);
 
