@@ -186,6 +186,17 @@ http_msg_content_type(const struct http_msg *msg) {
     return msg->content_type;
 }
 
+bool
+http_msg_content_type_is(const struct http_msg *msg, const char *content_type) {
+    const struct http_media_type *media_type;
+
+    if (!msg->content_type)
+        return false;
+
+    media_type = msg->content_type;
+    return strcmp(http_media_type_base_string(media_type), content_type) == 0;
+}
+
 const char *
 http_msg_body(const struct http_msg *msg) {
     return msg->body;
