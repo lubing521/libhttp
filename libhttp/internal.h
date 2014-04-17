@@ -153,7 +153,31 @@ void *http_content_form_data_decode(const struct http_msg *,
                                     const struct http_cfg *);
 void http_content_form_data_delete(void *);
 
-/* Misc */
+/* Parametrized value (used in various header values) */
+/* <token> (";" <name> "=" <value>)* */
+struct http_pvalue_parameter {
+    char *name;
+    char *value;
+};
+
+void http_pvalue_parameter_init(struct http_pvalue_parameter *);
+void http_pvalue_parameter_free(struct http_pvalue_parameter *);
+
+struct http_pvalue {
+    char *value;
+
+    struct http_pvalue_parameter *parameters;
+    size_t nb_parameters;
+};
+
+int http_pvalue_parse(struct http_pvalue *, const char *, const char **);
+void http_pvalue_free(struct http_pvalue *);
+
+void http_pvalue_add_parameter(struct http_pvalue *,
+                               const struct http_pvalue_parameter *);
+bool http_pvalue_has_parameter(const struct http_pvalue *, const char *);
+const char *http_pvalue_get_parameter(const struct http_pvalue *, const char *);
+
 int http_token_list_get_next_token(const char *, char *, size_t, const char **);
 
 /* Parser */
