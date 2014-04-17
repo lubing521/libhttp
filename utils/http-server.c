@@ -66,17 +66,17 @@ static void https_upload_unbuffered_post(struct http_connection *,
 
 int
 main(int argc, char **argv) {
-    enum http_bufferization bufferization;
+    bool bufferize_body;
     struct http_cfg cfg;
     int opt;
 
-    bufferization = HTTP_BUFFERIZE_ALWAYS;
+    bufferize_body = true;
 
     opterr = 0;
     while ((opt = getopt(argc, argv, "bhu")) != -1) {
         switch (opt) {
         case 'b':
-            bufferization = HTTP_BUFFERIZE_ALWAYS;
+            bufferize_body = true;
             break;
 
         case 'h':
@@ -84,7 +84,7 @@ main(int argc, char **argv) {
             break;
 
         case 'u':
-            bufferization = HTTP_BUFFERIZE_NEVER;
+            bufferize_body = false;
             break;
 
         case '?':
@@ -99,7 +99,7 @@ main(int argc, char **argv) {
     cfg.trace_hook = https_on_trace;
     cfg.request_hook = https_on_request;
 
-    cfg.bufferization = bufferization;
+    cfg.bufferize_body = bufferize_body;
 
     https_initialize(&cfg);
 
@@ -182,12 +182,12 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
                           https_license_get, NULL);
 
     http_route_options_init(&options, cfg);
-    options.bufferization = HTTP_BUFFERIZE_ALWAYS;
+    options.bufferize_body = true;
     http_server_add_route(https.server, HTTP_POST, "/upload/buffered",
                           https_upload_buffered_post, &options);
 
     http_route_options_init(&options, cfg);
-    options.bufferization = HTTP_BUFFERIZE_NEVER;
+    options.bufferize_body = false;
     options.max_content_length = 0;
     http_server_add_route(https.server, HTTP_POST, "/upload/unbuffered",
                           https_upload_unbuffered_post, &options);

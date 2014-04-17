@@ -40,7 +40,7 @@ main(int argc, char **argv) {
     cfg.max_header_name_length = 8;
     cfg.max_header_value_length = 20;
 
-    cfg.bufferization = HTTP_BUFFERIZE_ALWAYS;
+    cfg.bufferize_body = true;
 
     msg_type = HTTP_MSG_REQUEST;
     skip_header_processing = false;

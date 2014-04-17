@@ -53,7 +53,7 @@ http_route_options_init(struct http_route_options *options,
                         const struct http_cfg *cfg) {
     memset(options, 0, sizeof(struct http_route_options));
 
-    options->bufferization = cfg->bufferization;
+    options->bufferize_body = cfg->bufferize_body;
     options->max_content_length = cfg->max_content_length;
 }
 

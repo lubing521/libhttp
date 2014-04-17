@@ -145,11 +145,6 @@ enum http_connection_option {
     HTTP_CONNECTION_CLOSE      = 0x02,
 };
 
-enum http_bufferization {
-    HTTP_BUFFERIZE_ALWAYS,
-    HTTP_BUFFERIZE_NEVER,
-};
-
 struct http_msg;
 struct http_header;
 struct http_connection;
@@ -258,7 +253,7 @@ struct http_cfg {
     size_t max_content_length;
     size_t max_chunk_length;
 
-    enum http_bufferization bufferization;
+    bool bufferize_body;
 
     uint64_t connection_timeout; /* milliseconds */
 
@@ -302,7 +297,7 @@ char *http_uri_encode_path_and_query(const struct http_uri *);
 
 /* Server */
 struct http_route_options {
-    enum http_bufferization bufferization;
+    bool bufferize_body;
 
     size_t max_content_length;
 };
