@@ -328,6 +328,8 @@ int http_default_error_body_writer(struct http_connection *,
 struct http_client *http_client_new(struct http_cfg *, struct event_base *);
 void http_client_delete(struct http_client *client);
 
+void http_client_clear_headers(struct http_client *);
+void http_client_add_header(struct http_client *, const char *, const char *);
 int http_client_send_request(struct http_client *, enum http_method,
                              const struct http_uri *);
 

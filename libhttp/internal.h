@@ -366,6 +366,9 @@ struct http_client {
     char numeric_host_port[HTTP_HOST_PORT_BUFSZ];
 
     struct http_connection *connection;
+
+    struct http_header *headers;
+    size_t nb_headers;
 };
 
 void http_client_error(const struct http_client *, const char *, ...)

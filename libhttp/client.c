@@ -144,8 +144,38 @@ http_client_delete(struct http_client *client) {
 
     http_connection_delete(client->connection);
 
+    http_client_clear_headers(client);
+
     memset(client, 0, sizeof(struct http_client));
     http_free(client);
+}
+
+void
+http_client_clear_headers(struct http_client *client) {
+    for (size_t i = 0; i < client->nb_headers; i++)
+        http_header_free(client->headers + i);
+    http_free(client->headers);
+}
+
+void
+http_client_add_header(struct http_client *client,
+                       const char *name, const char *value) {
+    struct http_header *header;
+
+    if (client->nb_headers == 0) {
+        client->headers = http_malloc(sizeof(struct http_header));
+    } else {
+        size_t nsz;
+
+        nsz = (client->nb_headers + 1) * sizeof(struct http_header);
+        client->headers = http_realloc(client->headers, nsz);
+    }
+
+    header = client->headers + client->nb_headers;
+    header->name = http_strdup(name);
+    header->value = http_strdup(value);
+
+    client->nb_headers++;
 }
 
 int
@@ -160,6 +190,17 @@ http_client_send_request(struct http_client *client, enum http_method method,
 
     if (http_connection_write_header(client->connection, "Host", host) == -1)
         goto error;
+
+    for (size_t i = 0; i < client->nb_headers; i++) {
+        struct http_header *header;
+
+        header = client->headers + i;
+
+        if (http_connection_write_header(client->connection,
+                                         header->name, header->value) == -1) {
+            goto error;
+        }
+    }
 
     if (http_connection_write_empty_body(client->connection) == -1)
         goto error;
