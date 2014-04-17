@@ -773,7 +773,7 @@ http_connection_preprocess_request(struct http_connection *connection,
         }
     }
 
-    /* Is the request bufferized ? */
+    /* Is the body of the request bufferized ? */
     msg->is_bufferized = route->options.bufferize_body;
 
     return 0;
@@ -782,6 +782,13 @@ http_connection_preprocess_request(struct http_connection *connection,
 static int
 http_connection_preprocess_response(struct http_connection *connection,
                                     struct http_msg *msg) {
+    const struct http_cfg *cfg;
+
+    cfg = http_connection_get_cfg(connection);
+
+    /* Is the body of the response bufferized ? */
+    msg->is_bufferized = cfg->bufferize_body;
+
     return 0;
 }
 
