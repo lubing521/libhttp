@@ -280,7 +280,7 @@ int
 http_msg_content_disposition_filename(const struct http_msg *msg,
                                       char **pfilename) {
     struct http_pvalue pvalue;
-    const char *str, *filename;
+    const char *str, *filename, *ptr;
 
     str = http_msg_get_header(msg, "Content-Disposition");
     if (!str)
@@ -293,7 +293,18 @@ http_msg_content_disposition_filename(const struct http_msg *msg,
     if (!filename)
         return 0;
 
-    *pfilename = http_strdup(filename);
+    ptr = filename + strlen(filename);
+    while (ptr >= filename) {
+        if (*ptr == '/') {
+            ptr++;
+            break;
+        }
+
+        ptr--;
+    }
+
+
+    *pfilename = http_strdup(ptr);
 
     http_pvalue_free(&pvalue);
     return 1;
