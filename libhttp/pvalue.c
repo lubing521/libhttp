@@ -177,7 +177,7 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
             if (*ptr != '"') {
                 http_set_error("truncated quoted parameter value");
                 http_pvalue_parameter_free(&parameter);
-                return -1;
+                goto error;
             }
 
             ptr++; /* skip '"' */
@@ -190,7 +190,7 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
                     if (toklen == 0) {
                         http_set_error("empty parameter value");
                         http_pvalue_parameter_free(&parameter);
-                        return -1;
+                        goto error;
                     }
 
                     parameter.value = http_strndup(start, toklen);
@@ -199,7 +199,7 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
                     http_set_error("invalid character \\%hhu in parameter name",
                                    (unsigned char)*ptr);
                     http_pvalue_parameter_free(&parameter);
-                    return -1;
+                    goto error;
                 } else {
                     ptr++;
                 }
@@ -239,6 +239,7 @@ http_pvalue_free(struct http_pvalue *pvalue) {
     http_free(pvalue->value);
     for (size_t i = 0; i < pvalue->nb_parameters; i++)
         http_pvalue_parameter_free(pvalue->parameters + i);
+    http_free(pvalue->parameters);
 
     memset(pvalue, 0, sizeof(struct http_pvalue));
 }
