@@ -551,16 +551,7 @@ http_connection_write_response(struct http_connection *connection,
 void
 http_connection_write_header(struct http_connection *connection,
                              const char *name, const char *value) {
-    char *encoded_value;
-
-    encoded_value = http_iconv(value, "UTF-8", "ISO-8859-1");
-    if (!encoded_value)
-        encoded_value = http_mime_q_encode(value);
-
-    http_connection_printf(connection, "%s: %s\r\n",
-                           name, encoded_value);
-
-    http_free(encoded_value);
+    http_connection_printf(connection, "%s: %s\r\n", name, value);
 }
 
 void
