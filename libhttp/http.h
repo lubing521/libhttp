@@ -359,13 +359,13 @@ int http_connection_write_request(struct http_connection *,
                                   enum http_method, const struct http_uri *);
 int http_connection_write_response(struct http_connection *,
                                    enum http_status_code, const char *);
-int http_connection_write_header(struct http_connection *,
-                                 const char *, const char *);
+void http_connection_write_header(struct http_connection *,
+                                  const char *, const char *);
 void http_connection_write_header_size(struct http_connection *,
                                        const char *, size_t);
 int http_connection_write_body(struct http_connection *,
                                const char *, size_t);
-int http_connection_write_empty_body(struct http_connection *);
+void http_connection_write_empty_body(struct http_connection *);
 
 int http_connection_write_file(struct http_connection *, int, const char *);
 
@@ -383,5 +383,7 @@ bool http_media_type_has_parameter(const struct http_media_type *,
                                    const char *);
 const char *http_media_type_get_parameter(const struct http_media_type *,
                                           const char *);
+
+char *http_mime_q_encode(const char *);
 
 #endif

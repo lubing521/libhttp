@@ -1775,9 +1775,7 @@ ignore_header:
                 return -1;
             }
 
-            if (http_connection_write_empty_body(parser->connection) == -1) {
-                return -1;
-            }
+            http_connection_write_empty_body(parser->connection);
         }
     }
 

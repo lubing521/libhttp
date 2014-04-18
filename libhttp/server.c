@@ -223,12 +223,7 @@ http_default_error_body_writer(struct http_connection *connection,
 
     len = (size_t)ret;
 
-    if (http_connection_write_header(connection,
-                                     "Content-Type", "text/html") == -1) {
-        http_free(body);
-        return -1;
-    }
-
+    http_connection_write_header(connection, "Content-Type", "text/html");
     http_connection_write_header_size(connection, "Content-Length", len);
 
     if (http_connection_write_body(connection, body, len) == -1) {

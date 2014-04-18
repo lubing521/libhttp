@@ -548,22 +548,19 @@ http_connection_write_response(struct http_connection *connection,
     return 0;
 }
 
-int
+void
 http_connection_write_header(struct http_connection *connection,
                              const char *name, const char *value) {
     char *encoded_value;
 
     encoded_value = http_iconv(value, "UTF-8", "ISO-8859-1");
-    if (!encoded_value) {
-        /* TODO MIME encoding required */
-        return -1;
-    }
+    if (!encoded_value)
+        encoded_value = http_mime_q_encode(value);
 
     http_connection_printf(connection, "%s: %s\r\n",
                            name, encoded_value);
 
     http_free(encoded_value);
-    return 0;
 }
 
 void
@@ -590,13 +587,10 @@ http_connection_write_body(struct http_connection *connection,
     return 0;
 }
 
-int
+void
 http_connection_write_empty_body(struct http_connection *connection) {
-    if (http_connection_write_header(connection, "Content-Length", "0") == -1)
-        return -1;
-
+    http_connection_write_header(connection, "Content-Length", "0");
     http_connection_write(connection, "\r\n", 2);
-    return 0;
 }
 
 int
@@ -902,9 +896,7 @@ http_connection_write_response_headers(struct http_connection *connection) {
         return -1;
     }
 
-    if (http_connection_write_header(connection, "Date", date) == -1)
-        return -1;
-
+    http_connection_write_header(connection, "Date", date);
     return 0;
 }
 
@@ -932,8 +924,7 @@ http_connection_write_options_response(struct http_connection *connection,
 
         if (http_connection_write_response(connection, HTTP_OK, NULL) == -1)
             return -1;
-        if (http_connection_write_header(connection, "Allow", methods) == -1)
-            return -1;
+        http_connection_write_header(connection, "Allow", methods);
     } else {
         enum http_method methods[HTTP_METHOD_MAX];
         struct http_route_base *route_base;
@@ -963,10 +954,7 @@ http_connection_write_options_response(struct http_connection *connection,
             method = methods[i];
             method_string = http_method_to_string(method);
 
-            if (http_connection_write_header(connection, "Allow",
-                                             method_string) == -1) {
-                return -1;
-            }
+            http_connection_write_header(connection, "Allow", method_string);
         }
     }
 
@@ -1014,10 +1002,7 @@ http_connection_write_405_error(struct http_connection *connection,
         method = methods[i];
         method_string = http_method_to_string(method);
 
-        if (http_connection_write_header(connection,
-                                         "Allow", method_string) == -1) {
-            goto error;
-        }
+        http_connection_write_header(connection, "Allow", method_string);
     }
 
     if (http_connection_write_error_body(connection, HTTP_METHOD_NOT_ALLOWED,

@@ -192,14 +192,8 @@ http_client_send_request(struct http_client *client, enum http_method method,
     if (http_client_start_request(client, method, uri) == -1)
         return -1;
 
-    if (http_connection_write_empty_body(client->connection) == -1)
-        goto error;
-
+    http_connection_write_empty_body(client->connection);
     return 0;
-
-error:
-    http_client_disconnect(client);
-    return -1;
 }
 
 int
@@ -286,18 +280,15 @@ http_client_start_request(struct http_client *client, enum http_method method,
     if (http_connection_write_request(client->connection, method, uri) == -1)
         goto error;
 
-    if (http_connection_write_header(client->connection, "Host", host) == -1)
-        goto error;
+    http_connection_write_header(client->connection, "Host", host);
 
     for (size_t i = 0; i < client->nb_headers; i++) {
         struct http_header *header;
 
         header = client->headers + i;
 
-        if (http_connection_write_header(client->connection,
-                                         header->name, header->value) == -1) {
-            goto error;
-        }
+        http_connection_write_header(client->connection,
+                                     header->name, header->value);
     }
 
     return 0;

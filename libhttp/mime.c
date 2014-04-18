@@ -124,6 +124,77 @@ http_media_type_get_parameter(const struct http_media_type *media_type,
     return NULL;
 }
 
+char *
+http_mime_q_encode(const char *string) {
+    /* RFC 2047 4.2: Upper case should be used for hexadecimal digits "A"
+     * through "F". */
+    static const char *hex_digits = "0123456789ABCDEF";
+
+    const char *prefix, *suffix;
+    size_t prefix_len, suffix_len;
+    const char *iptr;
+    char *optr;
+
+    char *encoded_string;
+    size_t len;
+
+    prefix = "=?UTF-8?Q?";
+    prefix_len = strlen(prefix);
+
+    suffix = "?=";
+    suffix_len = strlen(prefix);
+
+    /* Compute the size of the encoded string */
+    len = prefix_len;
+
+    iptr = string;
+    while (*iptr != '\0') {
+        if ((*iptr >= 'a' && *iptr <= 'z')
+         || (*iptr >= 'A' && *iptr <= 'Z')
+         || (*iptr >= '0' && *iptr <= '9')) {
+            len++;
+        } else {
+            len += 3;
+        }
+
+        iptr++;
+    }
+
+    len += suffix_len;
+
+    /* Encode the string */
+    encoded_string = http_malloc(len + 1);
+
+    optr = encoded_string;
+    memcpy(optr, prefix, prefix_len);
+    optr += prefix_len;
+
+    iptr = string;
+    while (*iptr != '\0') {
+        if ((*iptr >= 'a' && *iptr <= 'z')
+         || (*iptr >= 'A' && *iptr <= 'Z')
+         || (*iptr >= '0' && *iptr <= '9')) {
+            *optr++ = *iptr;
+        } else {
+            unsigned char c;
+
+            c = (unsigned char)*iptr;
+
+            *optr++ = '=';
+            *optr++ = hex_digits[c >> 4];
+            *optr++ = hex_digits[c & 0xf];
+        }
+
+        iptr++;
+    }
+
+    memcpy(optr, suffix, suffix_len);
+    optr += suffix_len;
+
+    *optr = '\0';
+    return encoded_string;
+}
+
 static bool
 http_is_media_type_char(unsigned char c) {
     static uint32_t table[8] = {

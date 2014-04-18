@@ -23,6 +23,10 @@ int
 main(int argc, char **argv) {
     struct http_media_type *media_type;
 
+    /* --------------------------------------------------------------------
+     *  Media types
+     * -------------------------------------------------------------------- */
+
 #define HTTPT_BEGIN(str_)                                       \
     do {                                                        \
         media_type = http_media_type_new(str_);                 \
@@ -143,6 +147,25 @@ main(int argc, char **argv) {
 #undef HTTPT_BEGIN
 #undef HTTPT_END
 #undef HTTPT_MEDIA_TYPE_PARAMETER_IS
+
+    /* --------------------------------------------------------------------
+     *  Q-encoding
+     * -------------------------------------------------------------------- */
+#define HTTPT_QENCODING_IS(string_, encoded_string_)            \
+    do {                                                        \
+        char *encoded_string;                                   \
+                                                                \
+        encoded_string = http_mime_q_encode(string_);           \
+        HTTPT_IS_EQUAL_STRING(encoded_string, encoded_string_); \
+    } while (0)
+
+    HTTPT_QENCODING_IS("", "=?UTF-8?Q?" "?=");
+    HTTPT_QENCODING_IS("abc", "=?UTF-8?Q?" "abc" "?=");
+    HTTPT_QENCODING_IS("été", "=?UTF-8?Q?" "=C3=A9t=C3=A9" "?=");
+    HTTPT_QENCODING_IS("foo bar\tbaz", "=?UTF-8?Q?" "foo=20bar=09baz" "?=");
+    HTTPT_QENCODING_IS("=42??", "=?UTF-8?Q?" "=3D42=3F=3F" "?=");
+
+#undef HTTPT_QENCODING_IS
 
     return 0;
 }
