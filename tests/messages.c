@@ -37,9 +37,6 @@ main(int argc, char **argv) {
     cfg.max_content_length = 48;
     cfg.max_chunk_length = 16;
 
-    cfg.max_header_name_length = 8;
-    cfg.max_header_value_length = 20;
-
     cfg.bufferize_body = true;
 
     msg_type = HTTP_MSG_REQUEST;
@@ -207,6 +204,10 @@ main(int argc, char **argv) {
     } while (0)
 
     msg_type = HTTP_MSG_REQUEST;
+
+    cfg.max_header_name_length = 8;
+    cfg.max_header_value_length = 20;
+
     skip_header_processing = true;
 
     HTTPT_BEGIN_HEADERS("Foo: bar\r\n\r\n");
@@ -250,9 +251,62 @@ main(int argc, char **argv) {
     HTTPT_INVALID_HEADER("Key: AVeryLargeValueABCDEF",
                          HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE);
 
+
+    cfg.max_header_name_length = 128;
+    cfg.max_header_value_length = 4096;
+
 #undef HTTPT_BEGIN_HEADERS
 #undef HTTPT_INVALID_HEADER
 #undef HTTPT_IS_EQUAL_HEADER
+
+    /* --------------------------------------------------------------------
+     *  Content-Disposition
+     * -------------------------------------------------------------------- */
+#define HTTPT_CONTENT_DISPOSITION_IS(header_, filename_)                     \
+    do {                                                                     \
+        char *filename;                                                      \
+        int ret;                                                             \
+                                                                             \
+        HTTPT_BEGIN("POST / HTTP/1.0\r\n"                                    \
+                    "Content-Length: 0\r\n"                                  \
+                    "Content-Disposition: attachment; " header_ "\r\n"       \
+                    "\r\n");                                                 \
+        if (parser.status_code > 0) {                                        \
+            HTTPT_DIE("%s:%d: invalid message: %s",                          \
+                      __FILE__, __LINE__, parser.errmsg);                    \
+        }                                                                    \
+                                                                             \
+        ret = http_msg_content_disposition_filename(msg, &filename);         \
+        if (ret == -1) {                                                     \
+            HTTPT_DIE("%s:%d: cannot read content disposition filename: %s", \
+                      __FILE__, __LINE__, http_get_error());                 \
+        } else if (ret == 0) {                                               \
+            HTTPT_DIE("%s:%d: content disposition filename not found",       \
+                      __FILE__, __LINE__);                                   \
+        }                                                                    \
+                                                                             \
+        HTTPT_IS_EQUAL_STRING(filename, filename_);                          \
+        http_free(filename);                                                 \
+                                                                             \
+        HTTPT_END();                                                         \
+    } while (0)
+
+    msg_type = HTTP_MSG_REQUEST;
+    skip_header_processing = false;
+
+    HTTPT_CONTENT_DISPOSITION_IS("filename=foo", "foo");
+
+    HTTPT_CONTENT_DISPOSITION_IS("filename=\"\"", "");
+    HTTPT_CONTENT_DISPOSITION_IS("filename=\"a b\"", "a b");
+    HTTPT_CONTENT_DISPOSITION_IS("filename=\"a\\\"c\"", "a\"c");
+    HTTPT_CONTENT_DISPOSITION_IS("filename=\"a\\\\c\"", "a\\c");
+
+    HTTPT_CONTENT_DISPOSITION_IS("filename=\"../foo\"", "foo");
+    HTTPT_CONTENT_DISPOSITION_IS("filename=\"../../foo\"", "foo");
+    HTTPT_CONTENT_DISPOSITION_IS("filename=\"/home/user/foo\"", "foo");
+    HTTPT_CONTENT_DISPOSITION_IS("filename=\"/home/foo/\"", "");
+
+#undef HTTPT_CONTENT_DISPOSITION_IS
 
     /* --------------------------------------------------------------------
      *  Body
@@ -269,9 +323,7 @@ main(int argc, char **argv) {
         }                                                                     \
     } while (0)
 
-    cfg.max_header_name_length = 1024;
-    cfg.max_header_value_length = 1024;
-
+    msg_type = HTTP_MSG_REQUEST;
     skip_header_processing = false;
 
     HTTPT_BEGIN_BODY("Content-Length: 0\r\n\r\n");

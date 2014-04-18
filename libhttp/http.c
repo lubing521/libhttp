@@ -294,7 +294,7 @@ http_msg_content_disposition_filename(const struct http_msg *msg,
         return 0;
 
     ptr = filename + strlen(filename);
-    while (ptr >= filename) {
+    while (ptr > filename) {
         if (*ptr == '/') {
             ptr++;
             break;
@@ -302,7 +302,6 @@ http_msg_content_disposition_filename(const struct http_msg *msg,
 
         ptr--;
     }
-
 
     *pfilename = http_strdup(ptr);
 

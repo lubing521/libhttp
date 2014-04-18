@@ -134,18 +134,14 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
                 if (*ptr == '"' || *ptr == '\0') {
                     char *optr;
                     toklen = (size_t)(ptr - start);
-                    if (toklen == 0) {
-                        http_set_error("empty parameter value");
-                        http_pvalue_parameter_free(&parameter);
-                        goto error;
-                    }
 
                     parameter.value = http_malloc(toklen + 1);
 
                     optr = parameter.value;
                     for (size_t i = 0; i < toklen; i++) {
                         if (start[i] == '\\') {
-                            continue;
+                            i++;
+                            *optr++ = start[i];
                         } else {
                             *optr++ = start[i];
                         }
@@ -196,8 +192,8 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
                     parameter.value = http_strndup(start, toklen);
                     break;
                 } else if (!http_is_pvalue_char((unsigned char)*ptr)) {
-                    http_set_error("invalid character \\%hhu in parameter name",
-                                   (unsigned char)*ptr);
+                    http_set_error("invalid character \\%hhu in parameter "
+                                   "value", (unsigned char)*ptr);
                     http_pvalue_parameter_free(&parameter);
                     goto error;
                 } else {
