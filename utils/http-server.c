@@ -22,6 +22,8 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include <event.h>
 
@@ -301,8 +303,11 @@ https_foo_bar_get(struct http_connection *connection,
 static void
 https_license_get(struct http_connection *connection,
                   const struct http_msg *msg, void *arg) {
+    enum http_status_code status_code;
     const char *path;
-    int fd;
+    int fd, ret;
+    struct stat st;
+    size_t sz;
 
     path = "./LICENSE";
 
@@ -319,10 +324,35 @@ https_license_get(struct http_connection *connection,
         return;
     }
 
-    http_connection_write_response(connection, HTTP_OK, NULL);
+    if (fstat(fd, &st) == -1)
+        https_die("cannot stat file %s: %s", path, strerror(errno));
+
+    sz = (size_t)st.st_size;
+
+    if (http_request_has_range_set(msg)) {
+        if (!http_range_set_is_satisfiable(http_request_range_set(msg), sz)) {
+            http_connection_write_error(connection,
+                                        HTTP_REQUEST_RANGE_NOT_SATISFIABLE,
+                                        NULL);
+            return;
+        }
+
+        status_code = HTTP_PARTIAL_CONTENT;
+    } else {
+        status_code = HTTP_OK;
+    }
+
+    http_connection_write_response(connection, status_code, NULL);
     http_connection_write_header(connection, "Content-Type", "text/plain");
 
-    if (http_connection_write_file(connection, fd, path) == -1)
+    if (http_request_has_range_set(msg)) {
+        ret = http_connection_write_partial_file(connection, fd, path,
+                                                 http_request_range_set(msg));
+    } else {
+        ret = http_connection_write_file(connection, fd, path);
+    }
+
+    if (ret == -1)
         http_connection_delete(connection);
 }
 

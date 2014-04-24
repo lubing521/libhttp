@@ -30,6 +30,8 @@
 const char *http_get_error(void);
 void http_set_error(const char *, ...)
     __attribute__((format(printf, 1, 2)));
+void http_set_error_invalid_character(unsigned char, const char *, ...)
+    __attribute__((format(printf, 2, 3)));
 
 /* Memory */
 struct http_memory_allocator {
@@ -145,6 +147,15 @@ enum http_connection_option {
     HTTP_CONNECTION_CLOSE      = 0x02,
 };
 
+enum http_range_unit {
+    HTTP_RANGE_UNIT_BYTES,
+};
+
+struct http_range_set;
+
+bool http_range_set_is_satisfiable(const struct http_range_set *, size_t);
+size_t http_range_set_length(const struct http_range_set *);
+
 struct http_msg;
 struct http_header;
 struct http_connection;
@@ -178,6 +189,9 @@ const char *http_request_named_parameter(const struct http_msg *,
                                          const char *);
 bool http_request_has_query_parameter(const struct http_msg *, const char *);
 const char *http_request_query_parameter(const struct http_msg *, const char *);
+
+bool http_request_has_range_set(const struct http_msg *);
+const struct http_range_set *http_request_range_set(const struct http_msg *);
 
 enum http_status_code http_response_status_code(const struct http_msg *);
 const char *http_response_reason_phrase(const struct http_msg *);
@@ -368,6 +382,9 @@ int http_connection_write_body(struct http_connection *,
 void http_connection_write_empty_body(struct http_connection *);
 
 int http_connection_write_file(struct http_connection *, int, const char *);
+int http_connection_write_partial_file(struct http_connection *,
+                                       int, const char *,
+                                       const struct http_range_set *);
 
 /* MIME */
 struct http_media_type *http_media_type_new(const char *);

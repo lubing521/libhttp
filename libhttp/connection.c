@@ -588,19 +588,55 @@ int
 http_connection_write_file(struct http_connection *connection, int fd,
                            const char *path) {
     struct stat st;
-    size_t sz;
+    size_t file_sz;
 
     if (fstat(fd, &st) == -1) {
+        /* TODO HTTP_INTERNAL_SERVER_ERROR */
         http_set_error("cannot stat file %s: %s", path, strerror(errno));
         return -1;
     }
 
-    sz = (size_t)st.st_size;
+    file_sz = (size_t)st.st_size;
 
-    http_connection_write_header_size(connection, "Content-Length", sz);
+    http_connection_write_header_size(connection, "Content-Length", file_sz);
     http_connection_write(connection, "\r\n", 2);
-    http_stream_add_file(connection->wstream, fd, path);
 
+    http_stream_add_file(connection->wstream, fd, file_sz, path);
+    return 0;
+}
+
+int
+http_connection_write_partial_file(struct http_connection *connection,
+                                   int fd, const char *path,
+                                   const struct http_range_set *range_set) {
+    struct http_range_set set;
+    struct stat st;
+    size_t file_sz, range_length;
+
+    if (fstat(fd, &st) == -1) {
+        /* TODO HTTP_INTERNAL_SERVER_ERROR */
+        http_set_error("cannot stat file %s: %s", path, strerror(errno));
+        return -1;
+    }
+
+    file_sz = (size_t)st.st_size;
+
+    if (!http_range_set_is_satisfiable(range_set, file_sz)) {
+        /* TODO HTTP_REQUEST_RANGE_NOT_SATISFIABLE */
+        http_set_error("range not satisfiable");
+        return -1;
+    }
+
+    http_range_set_simplify(range_set, file_sz, &set);
+    range_length = http_range_set_length(&set);
+
+    /* TODO Must include MIME data (boundaries, etc.) */
+    http_connection_write_header_size(connection, "Content-Length",
+                                      range_length);
+    http_connection_write(connection, "\r\n", 2);
+
+    http_stream_add_partial_file(connection->wstream, fd, file_sz,
+                                 path, &set);
     return 0;
 }
 

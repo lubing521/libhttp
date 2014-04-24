@@ -8,6 +8,7 @@ session.vim
 /tests/messages
 /tests/mime
 /tests/pvalues
+/tests/ranges
 /tests/routes
 /tests/tokens
 /tests/uris

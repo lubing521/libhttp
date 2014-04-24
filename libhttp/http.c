@@ -357,6 +357,19 @@ http_request_query_parameter(const struct http_msg *msg, const char *name) {
     return http_uri_query_parameter(msg->u.request.uri, name);
 }
 
+bool
+http_request_has_range_set(const struct http_msg *msg) {
+    return msg->u.request.has_range_set;
+}
+
+const struct http_range_set *
+http_request_range_set(const struct http_msg *msg) {
+    if (!msg->u.request.has_range_set)
+        return NULL;
+
+    return &msg->u.request.range_set;
+}
+
 enum http_status_code
 http_response_status_code(const struct http_msg *msg) {
     assert(msg->type == HTTP_MSG_RESPONSE);
@@ -615,6 +628,8 @@ http_request_free(struct http_request *request) {
     for (size_t i = 0; i < request->nb_named_parameters; i++)
         http_named_parameter_free(request->named_parameters + i);
     http_free(request->named_parameters);
+
+    http_range_set_free(&request->range_set);
 }
 
 void
@@ -1718,7 +1733,7 @@ http_msg_process_headers(struct http_parser *parser) {
 
                 list = end;
             }
-        } else if (HTTP_HEADER_IS("Expect")) {
+        } else if (msg->type == HTTP_MSG_REQUEST && HTTP_HEADER_IS("Expect")) {
             const char *list, *end;
             char token[32];
 
@@ -1741,6 +1756,14 @@ http_msg_process_headers(struct http_parser *parser) {
                 }
 
                 list = end;
+            }
+        } else if (msg->type == HTTP_MSG_REQUEST && HTTP_HEADER_IS("Range")) {
+            msg->u.request.has_range_set = true;
+
+            if (http_range_set_parse(&msg->u.request.range_set,
+                                     header->value) == -1) {
+                HTTP_ERROR(HTTP_BAD_REQUEST, "cannot parse ranges: %s",
+                           http_get_error());
             }
         }
 

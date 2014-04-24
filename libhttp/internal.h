@@ -27,6 +27,20 @@
 /* Misc */
 #define HTTP_ARRAY_NB_ELEMENTS(array_) (sizeof(array_) / sizeof(array_[0]))
 
+#define MIN(a_, b_)                \
+    ({                             \
+        __typeof__(a_) a__ = (a_); \
+        __typeof__(b_) b__ = (b_); \
+        (a__ < b__) ? a__ : b__;   \
+    })
+
+#define MAX(a_, b_)                \
+    ({                             \
+        __typeof__(a_) a__ = (a_); \
+        __typeof__(b_) b__ = (b_); \
+        (a__ > b__) ? a__ : b__;   \
+    })
+
 int http_now_ms(uint64_t *);
 
 /* Error handling */
@@ -62,12 +76,41 @@ void http_stream_add_entry(struct http_stream *, intptr_t,
 void http_stream_add_data(struct http_stream *, const void *, size_t);
 void http_stream_add_vprintf(struct http_stream *, const char *, va_list);
 void http_stream_add_printf(struct http_stream *, const char *, ...);
-void http_stream_add_file(struct http_stream *, int, const char *);
+void http_stream_add_file(struct http_stream *, int, size_t, const char *);
+void http_stream_add_partial_file(struct http_stream *, int, size_t,
+                                  const char *, struct http_range_set *);
 
 int http_stream_write(struct http_stream *, int, size_t *);
 
 extern struct http_stream_functions http_stream_buffer_functions;
 extern struct http_stream_functions http_stream_file_functions;
+
+/* Ranges */
+struct http_range {
+    bool has_first;
+    size_t first;
+
+    bool has_last;
+    size_t last;
+};
+
+struct http_range_set {
+    enum http_range_unit unit;
+
+    struct http_range *ranges;
+    size_t nb_ranges;
+};
+
+void http_range_set_init(struct http_range_set *);
+void http_range_set_free(struct http_range_set *);
+
+int http_range_set_parse(struct http_range_set *, const char *);
+
+void http_range_set_simplify(const struct http_range_set *, size_t,
+                             struct http_range_set *);
+void http_range_set_add_range(struct http_range_set *,
+                              const struct http_range *);
+
 
 /* Protocol */
 char *http_decode_header_value(const char *, size_t);
@@ -97,6 +140,9 @@ struct http_request {
     size_t nb_named_parameters;
 
     bool expects_100_continue;
+
+    bool has_range_set;
+    struct http_range_set range_set;
 };
 
 void http_request_free(struct http_request *);

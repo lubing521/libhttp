@@ -22,6 +22,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <utest.h>
+
 #define HTTPT_DIE(fmt_, ...)                      \
     do {                                          \
         fprintf(stderr, fmt_"\n", ##__VA_ARGS__); \

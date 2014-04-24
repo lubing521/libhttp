@@ -53,11 +53,18 @@ struct http_stream_functions http_stream_buffer_functions = {
 
 struct http_stream_file {
     int fd;
+    size_t file_sz;
     char *path;
     struct bf_buffer *buf;
+
+    struct http_range_set ranges;
+    size_t range_idx;        /* current range */
+    size_t range_read_sz;    /* number of bytes read in the current range */
+
+    bool done_reading;
 };
 
-static struct http_stream_file *http_stream_file_new(int, const char *);
+static struct http_stream_file *http_stream_file_new(int, size_t, const char *);
 
 static int http_stream_file_write(intptr_t, int, size_t *);
 static void http_stream_file_delete(intptr_t);
@@ -66,6 +73,7 @@ struct http_stream_functions http_stream_file_functions = {
     .delete_func = http_stream_file_delete,
     .write_func  = http_stream_file_write,
 };
+
 
 struct http_stream *
 http_stream_new(void) {
@@ -164,10 +172,34 @@ http_stream_add_printf(struct http_stream *stream, const char *fmt, ...) {
 }
 
 void
-http_stream_add_file(struct http_stream *stream, int fd, const char *path) {
+http_stream_add_file(struct http_stream *stream, int fd, size_t file_sz,
+                     const char *path) {
+    struct http_stream_file *file;
+    struct http_range range;
+
+    memset(&range, 0, sizeof(struct http_range));
+    range.has_first = true;
+    range.first = 0;
+    range.has_last = true;
+    range.last = file_sz - 1;
+
+    file = http_stream_file_new(fd, file_sz, path);
+
+    http_range_set_init(&file->ranges);
+    http_range_set_add_range(&file->ranges, &range);
+
+    http_stream_add_entry(stream, (intptr_t)file, &http_stream_file_functions);
+}
+
+void
+http_stream_add_partial_file(struct http_stream *stream,
+                             int fd, size_t file_sz, const char *path,
+                             struct http_range_set *ranges) {
     struct http_stream_file *file;
 
-    file = http_stream_file_new(fd, path);
+    file = http_stream_file_new(fd, file_sz, path);
+    file->ranges = *ranges;
+
     http_stream_add_entry(stream, (intptr_t)file, &http_stream_file_functions);
 }
 
@@ -260,13 +292,14 @@ http_stream_buffer_delete(intptr_t arg) {
 }
 
 static struct http_stream_file *
-http_stream_file_new(int fd, const char *path) {
+http_stream_file_new(int fd, size_t file_sz, const char *path) {
     struct http_stream_file *file;
 
     file = http_malloc(sizeof(struct http_stream_file));
     memset(file, 0, sizeof(struct http_stream_file));
 
     file->fd = fd;
+    file->file_sz = file_sz;
     file->path = http_strdup(path);
     file->buf = bf_buffer_new(0);
 
@@ -280,34 +313,70 @@ http_stream_file_write(intptr_t arg, int fd, size_t *psz) {
 
     file = (struct http_stream_file *)arg;
 
+    /* If we have no data ready to write, we need to read the file */
     if (bf_buffer_length(file->buf) == 0) {
-        ret = bf_buffer_read(file->buf, file->fd, BUFSIZ);
+        struct http_range *range;
+        size_t range_sz, read_sz;
+
+        range = file->ranges.ranges + file->range_idx;
+        range_sz = range->last - range->first + 1;
+        //read_sz = MIN(range_sz - file->range_read_sz, (size_t)BUFSIZ);
+        read_sz = MIN(range_sz - file->range_read_sz, (size_t)50);
+
+        /* If we are just starting to read the current range, we need to move
+         * to the right offset */
+        if (file->range_read_sz == 0) {
+            if (lseek(file->fd, (off_t)range->first, SEEK_SET) == -1) {
+                http_set_error("cannot seek %s: %s",
+                               file->path, strerror(errno));
+                return -1;
+            }
+        }
+
+        ret = bf_buffer_read(file->buf, file->fd, read_sz);
         if (ret == -1) {
             http_set_error("cannot read %s: %s", file->path, strerror(errno));
             return -1;
         }
 
-        if (ret == 0) {
-            close(file->fd);
-            file->fd = -1;
+        file->range_read_sz += (size_t)ret;
+
+        if (ret == 0 && file->range_read_sz < range_sz) {
+            if (file->range_read_sz > 0) {
+                /* Invalid range */
+                http_set_error("range ends after the end of the file");
+                return -1;
+            }
+        }
+
+        if (file->range_read_sz == range_sz) {
+            /* We entirely read the current range */
+            if (file->range_idx == file->ranges.nb_ranges - 1) {
+                /* We read all ranges */
+                file->done_reading = true;
+                close(file->fd);
+                file->fd = -1;
+            } else {
+                /* Next range */
+                file->range_idx++;
+                file->range_read_sz = 0;
+            }
         }
     }
 
-    if (bf_buffer_length(file->buf) > 0) {
-        ret = bf_buffer_write(file->buf, fd);
-        if (ret == -1) {
-            http_set_error("%s", strerror(errno));
-            return -1;
-        }
-
-        *psz = (size_t)ret;
-    } else {
-        *psz = 0;
+    /* Write as much as possible */
+    ret = bf_buffer_write(file->buf, fd);
+    if (ret == -1) {
+        http_set_error("%s", strerror(errno));
+        return -1;
     }
 
-    if (file->fd == -1 && bf_buffer_length(file->buf) == 0)
+    if (bf_buffer_length(file->buf) == 0 && file->done_reading) {
+        /* We read and wrote all ranges */
         return 0;
+    }
 
+    *psz = (size_t)ret;
     return 1;
 }
 
@@ -323,6 +392,8 @@ http_stream_file_delete(intptr_t arg) {
     if (file->fd >= 0)
         close(file->fd);
     bf_buffer_delete(file->buf);
+
+    http_range_set_free(&file->ranges);
 
     memset(file, 0, sizeof(struct http_stream_file));
     http_free(file);

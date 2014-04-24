@@ -59,7 +59,7 @@ tests_BIN= $(subst .o,,$(tests_OBJ))
 
 $(tests_BIN): CFLAGS+= -Ilibhttp -Itests
 $(tests_BIN): LDFLAGS+= -L.
-$(tests_BIN): LDLIBS+= -lhttp -lhashtable -lbuffer -levent
+$(tests_BIN): LDLIBS+= -lhttp -lhashtable -lbuffer -levent -lutest
 
 # Target: utils
 utils_SRC= $(wildcard utils/*.c)
