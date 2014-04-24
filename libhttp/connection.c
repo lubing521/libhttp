@@ -417,12 +417,15 @@ http_connection_send_error(struct http_connection *connection,
 
     cfg = http_connection_get_cfg(connection);
 
-    va_start(ap, fmt);
-    vsnprintf(errmsg, HTTP_ERROR_BUFSZ, fmt, ap);
-    va_end(ap);
+    if (fmt) {
+        va_start(ap, fmt);
+        vsnprintf(errmsg, HTTP_ERROR_BUFSZ, fmt, ap);
+        va_end(ap);
+    }
 
     headers = http_headers_new();
-    ret = cfg->u.server.error_sender(connection, status_code, headers, errmsg);
+    ret = cfg->u.server.error_sender(connection, status_code, headers,
+                                     fmt ? errmsg : NULL);
 
     http_headers_delete(headers);
     return ret;
