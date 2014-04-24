@@ -541,7 +541,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             if (cfg->request_hook)
                 cfg->request_hook(connection, msg, cfg->hook_arg);
 
-            if (!connection->current_msg) {
+            if (!connection->msg_handler_called) {
                 /* The request was fully processed */
                 break;
             }
