@@ -197,11 +197,10 @@ http_server_add_route(struct http_server *server,
     return 0;
 }
 
-int
-http_default_error_body_writer(struct http_connection *connection,
-                               enum http_status_code status_code,
-                               const char *description) {
-    struct http_headers *headers;
+int http_default_error_sender(struct http_connection *connection,
+                              enum http_status_code status_code,
+                              struct http_headers *headers,
+                              const char *errmsg) {
     const char *reason_phrase;
     char *body;
     size_t bodysz;
@@ -211,20 +210,16 @@ http_default_error_body_writer(struct http_connection *connection,
     if (!reason_phrase)
         reason_phrase = "";
 
-    if (description) {
+    if (errmsg) {
         ret = http_asprintf(&body, "<h1>%d %s</h1>\n<p>%s</p>\n",
-                            status_code, reason_phrase, description);
+                            status_code, reason_phrase, errmsg);
     } else {
         ret = http_asprintf(&body, "<h1>%d %s</h1>\n",
                             status_code, reason_phrase);
     }
 
-    if (ret == -1)
-        return -1;
-
     bodysz = (size_t)ret;
 
-    headers = http_headers_new();
     http_headers_set_header(headers, "Content-Type", "text/html");
 
     http_connection_write_headers_and_body(connection, headers, body, bodysz);

@@ -27,7 +27,7 @@ http_cfg_init_server(struct http_cfg *cfg) {
 
     cfg->u.server.connection_backlog = 5;
     cfg->u.server.max_request_uri_length = 2048;
-    cfg->u.server.error_body_writer = http_default_error_body_writer;
+    cfg->u.server.error_sender = http_default_error_sender;
 }
 
 void

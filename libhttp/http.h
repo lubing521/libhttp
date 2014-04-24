@@ -224,8 +224,9 @@ struct http_cfg;
 typedef void (*http_error_hook)(const char *, void *);
 typedef void (*http_trace_hook)(const char *, void *);
 
-typedef int (*http_error_body_writer)(struct http_connection *,
-                                      enum http_status_code, const char *);
+typedef int (*http_error_sender)(struct http_connection *,
+                                 enum http_status_code,
+                                 struct http_headers *, const char *);
 
 typedef void (*http_request_hook)(struct http_connection *,
                                   const struct http_msg *, void *);
@@ -260,7 +261,7 @@ struct http_cfg {
 
             size_t max_request_uri_length;
 
-            http_error_body_writer error_body_writer;
+            http_error_sender error_sender;
         } server;
 
         struct {
@@ -340,8 +341,9 @@ int http_server_add_route(struct http_server *,
                           enum http_method, const char *, http_msg_handler,
                           const struct http_route_options *);
 
-int http_default_error_body_writer(struct http_connection *,
-                                   enum http_status_code, const char *);
+int http_default_error_sender(struct http_connection *,
+                              enum http_status_code,
+                              struct http_headers *, const char *);
 
 /* Client */
 struct http_client *http_client_new(struct http_cfg *, struct event_base *);
@@ -384,10 +386,8 @@ int http_connection_send_response_with_file(struct http_connection *,
                                             struct http_headers *,
                                             const char *,
                                             const struct http_range_set *);
-
-int http_connection_write_error(struct http_connection *,
-                                enum http_status_code,
-                                const char *, ...)
+int http_connection_send_error(struct http_connection *, enum http_status_code,
+                               const char *, ...)
     __attribute__((format(printf, 3, 4)));
 
 int http_connection_write_request(struct http_connection *,
