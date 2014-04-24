@@ -361,7 +361,7 @@ int http_client_send_request_with_body(struct http_client *, enum http_method,
 int http_client_send_request_with_file(struct http_client *, enum http_method,
                                        const struct http_uri *,
                                        struct http_headers *,
-                                       const char *);
+                                       const char *, int, size_t);
 
 /* Connections */
 void http_connection_delete(struct http_connection *);
@@ -384,7 +384,7 @@ int http_connection_send_response_with_body(struct http_connection *,
 int http_connection_send_response_with_file(struct http_connection *,
                                             enum http_status_code,
                                             struct http_headers *,
-                                            const char *,
+                                            const char *, int, size_t,
                                             const struct http_ranges *);
 int http_connection_send_error(struct http_connection *, enum http_status_code,
                                const char *, ...)

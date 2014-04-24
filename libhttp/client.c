@@ -217,26 +217,7 @@ http_client_send_request_with_file(struct http_client *client,
                                    enum http_method method,
                                    const struct http_uri *uri,
                                    struct http_headers *headers,
-                                   const char *path) {
-    struct stat st;
-    size_t file_sz;
-    int fd;
-
-    /* Open the file */
-    fd = open(path, O_RDONLY, path);
-    if (fd == -1) {
-        http_set_error("cannot open file %s: %s", path, strerror(errno));
-        return -1;
-    }
-
-    if (fstat(fd, &st) == -1) {
-        http_set_error("cannot stat file %s: %s", path, strerror(errno));
-        return -1;
-    }
-
-    file_sz = (size_t)st.st_size;
-
-    /* Send the response */
+                                   const char *path, int fd, size_t file_sz) {
     if (headers == NULL)
         headers = http_headers_new();
 
@@ -255,6 +236,7 @@ http_client_send_request_with_file(struct http_client *client,
     return 0;
 
 error:
+    close(fd);
     http_headers_delete(headers);
     return -1;
 }

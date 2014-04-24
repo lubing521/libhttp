@@ -315,8 +315,33 @@ https_license_get(struct http_connection *connection,
     struct http_headers *headers;
     enum http_status_code status_code;
     const char *path;
+    struct stat st;
+    size_t file_sz;
+    int fd;
 
     path = "./LICENSE";
+
+    fd = open(path, O_RDONLY, path);
+    if (fd == -1) {
+        if (errno == ENOENT) {
+            http_connection_send_error(connection, HTTP_NOT_FOUND, NULL);
+        } else {
+            http_connection_send_error(connection, HTTP_INTERNAL_SERVER_ERROR,
+                                       "cannot open file %s: %s",
+                                       path, strerror(errno));
+        }
+
+        return;
+    }
+
+    if (fstat(fd, &st) == -1) {
+        http_connection_send_error(connection, HTTP_INTERNAL_SERVER_ERROR,
+                                   "cannot stat file %s: %s",
+                                   path, strerror(errno));
+        return;
+    }
+
+    file_sz = (size_t)st.st_size;
 
     if (http_request_has_ranges(msg)) {
         status_code = HTTP_PARTIAL_CONTENT;
@@ -328,7 +353,8 @@ https_license_get(struct http_connection *connection,
     http_headers_set_header(headers, "Content-Type", "text/plain");
 
     http_connection_send_response_with_file(connection, status_code, headers,
-                                            path, http_request_ranges(msg));
+                                            path, fd, file_sz,
+                                            http_request_ranges(msg));
 }
 
 static void

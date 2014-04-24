@@ -339,28 +339,11 @@ int
 http_connection_send_response_with_file(struct http_connection *connection,
                                         enum http_status_code status_code,
                                         struct http_headers *headers,
-                                        const char *path,
+                                        const char *path, int fd,
+                                        size_t file_sz,
                                         const struct http_ranges *ranges) {
     struct http_ranges simplified_ranges;
-    struct stat st;
-    size_t file_sz, range_length, content_length;
-    int fd;
-
-    fd = -1;
-
-    /* Open the file */
-    fd = open(path, O_RDONLY, path);
-    if (fd == -1) {
-        http_set_error("cannot open file %s: %s", path, strerror(errno));
-        goto error;
-    }
-
-    if (fstat(fd, &st) == -1) {
-        http_set_error("cannot stat file %s: %s", path, strerror(errno));
-        goto error;
-    }
-
-    file_sz = (size_t)st.st_size;
+    size_t range_length, content_length;
 
     /* Check the ranges if there are any */
     if (ranges) {
@@ -399,8 +382,7 @@ http_connection_send_response_with_file(struct http_connection *connection,
     return 0;
 
 error:
-    if (fd >= 0)
-        close(fd);
+    close(fd);
     http_headers_delete(headers);
     return -1;
 }
