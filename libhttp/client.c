@@ -217,11 +217,9 @@ http_client_send_request_with_file(struct http_client *client,
                                    enum http_method method,
                                    const struct http_uri *uri,
                                    struct http_headers *headers,
-                                   const char *path,
-                                   const struct http_range_set *ranges) {
-    struct http_range_set simplified_ranges;
+                                   const char *path) {
     struct stat st;
-    size_t file_sz, range_length, content_length;
+    size_t file_sz;
     int fd;
 
     /* Open the file */
@@ -238,40 +236,20 @@ http_client_send_request_with_file(struct http_client *client,
 
     file_sz = (size_t)st.st_size;
 
-    /* Check the ranges if there are any */
-    if (ranges) {
-        http_range_set_simplify(ranges, file_sz, &simplified_ranges);
-        range_length = http_range_set_length(&simplified_ranges);
-    }
-
     /* Send the response */
     if (headers == NULL)
         headers = http_headers_new();
 
     http_client_init_request_headers(client, uri, headers);
 
-    if (ranges) {
-        content_length = range_length;
-    } else {
-        content_length = file_sz;
-    }
-
-    http_headers_format_header(headers, "Content-Length",
-                               "%zu", content_length);
+    http_headers_format_header(headers, "Content-Length", "%zu", file_sz);
 
     if (http_connection_write_request(client->connection, method, uri) == -1)
         goto error;
 
     http_connection_write_headers(client->connection, headers);
     http_connection_write(client->connection, "\r\n", 2);
-
-    if (ranges) {
-        http_stream_add_partial_file(client->connection->wstream,
-                                     fd, file_sz, path,
-                                     &simplified_ranges);
-    } else {
-        http_stream_add_file(client->connection->wstream, fd, file_sz, path);
-    }
+    http_stream_add_file(client->connection->wstream, fd, file_sz, path);
 
     http_headers_delete(headers);
     return 0;
