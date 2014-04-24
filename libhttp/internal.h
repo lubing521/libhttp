@@ -78,7 +78,7 @@ void http_stream_add_vprintf(struct http_stream *, const char *, va_list);
 void http_stream_add_printf(struct http_stream *, const char *, ...);
 void http_stream_add_file(struct http_stream *, int, size_t, const char *);
 void http_stream_add_partial_file(struct http_stream *, int, size_t,
-                                  const char *, const struct http_range_set *);
+                                  const char *, const struct http_ranges *);
 
 int http_stream_write(struct http_stream *, int, size_t *);
 
@@ -94,21 +94,21 @@ struct http_range {
     size_t last;
 };
 
-struct http_range_set {
+struct http_ranges {
     enum http_range_unit unit;
 
     struct http_range *ranges;
     size_t nb_ranges;
 };
 
-void http_range_set_init(struct http_range_set *);
-void http_range_set_free(struct http_range_set *);
+void http_ranges_init(struct http_ranges *);
+void http_ranges_free(struct http_ranges *);
 
-int http_range_set_parse(struct http_range_set *, const char *);
+int http_ranges_parse(struct http_ranges *, const char *);
 
-void http_range_set_simplify(const struct http_range_set *, size_t,
-                             struct http_range_set *);
-void http_range_set_add_range(struct http_range_set *,
+void http_ranges_simplify(const struct http_ranges *, size_t,
+                             struct http_ranges *);
+void http_ranges_add_range(struct http_ranges *,
                               const struct http_range *);
 
 
@@ -146,8 +146,8 @@ struct http_request {
 
     bool expects_100_continue;
 
-    bool has_range_set;
-    struct http_range_set range_set;
+    bool has_ranges;
+    struct http_ranges ranges;
 };
 
 void http_request_free(struct http_request *);

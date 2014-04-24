@@ -318,7 +318,7 @@ https_license_get(struct http_connection *connection,
 
     path = "./LICENSE";
 
-    if (http_request_has_range_set(msg)) {
+    if (http_request_has_ranges(msg)) {
         status_code = HTTP_PARTIAL_CONTENT;
     } else {
         status_code = HTTP_OK;
@@ -328,7 +328,7 @@ https_license_get(struct http_connection *connection,
     http_headers_set_header(headers, "Content-Type", "text/plain");
 
     http_connection_send_response_with_file(connection, status_code, headers,
-                                            path, http_request_range_set(msg));
+                                            path, http_request_ranges(msg));
 }
 
 static void

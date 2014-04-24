@@ -340,8 +340,8 @@ http_connection_send_response_with_file(struct http_connection *connection,
                                         enum http_status_code status_code,
                                         struct http_headers *headers,
                                         const char *path,
-                                        const struct http_range_set *ranges) {
-    struct http_range_set simplified_ranges;
+                                        const struct http_ranges *ranges) {
+    struct http_ranges simplified_ranges;
     struct stat st;
     size_t file_sz, range_length, content_length;
     int fd;
@@ -364,10 +364,10 @@ http_connection_send_response_with_file(struct http_connection *connection,
 
     /* Check the ranges if there are any */
     if (ranges) {
-        http_range_set_simplify(ranges, file_sz, &simplified_ranges);
-        range_length = http_range_set_length(&simplified_ranges);
+        http_ranges_simplify(ranges, file_sz, &simplified_ranges);
+        range_length = http_ranges_length(&simplified_ranges);
 
-        if (!http_range_set_is_satisfiable(&simplified_ranges, file_sz)) {
+        if (!http_ranges_is_satisfiable(&simplified_ranges, file_sz)) {
             /* TODO HTTP_REQUEST_RANGE_NOT_SATISFIABLE */
             http_set_error("range not satisfiable");
             goto error;
@@ -706,11 +706,11 @@ void
 http_connection_write_headers_and_file(struct http_connection *connection,
                                        struct http_headers *headers,
                                        const char *path, int fd, size_t file_sz,
-                                       const struct http_range_set *ranges) {
+                                       const struct http_ranges *ranges) {
     size_t content_length;
 
     if (ranges) {
-        content_length = http_range_set_length(ranges);
+        content_length = http_ranges_length(ranges);
     } else {
         content_length = file_sz;
     }

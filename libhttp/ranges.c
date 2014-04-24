@@ -22,26 +22,26 @@
 static int http_range_cmp(const void *, const void *);
 
 void
-http_range_set_init(struct http_range_set *set) {
-    memset(set, 0, sizeof(struct http_range_set));
+http_ranges_init(struct http_ranges *set) {
+    memset(set, 0, sizeof(struct http_ranges));
 }
 
 void
-http_range_set_free(struct http_range_set *set) {
+http_ranges_free(struct http_ranges *set) {
     if (!set)
         return;
 
     http_free(set->ranges);
 
-    memset(set, 0, sizeof(struct http_range_set));
+    memset(set, 0, sizeof(struct http_ranges));
 }
 
 int
-http_range_set_parse(struct http_range_set *set, const char *str) {
+http_ranges_parse(struct http_ranges *set, const char *str) {
     const char *ptr, *start;
     size_t toklen;
 
-    http_range_set_init(set);
+    http_ranges_init(set);
 
     ptr = str;
 
@@ -161,7 +161,7 @@ http_range_set_parse(struct http_range_set *set, const char *str) {
                 goto error;
             }
 
-            http_range_set_add_range(set, &range);
+            http_ranges_add_range(set, &range);
 
             if (*ptr == ',') {
                 ptr++; /* skip ',' */
@@ -211,7 +211,7 @@ http_range_set_parse(struct http_range_set *set, const char *str) {
             goto error;
         }
 
-        http_range_set_add_range(set, &range);
+        http_ranges_add_range(set, &range);
 
         while (*ptr == ' ' || *ptr == '\t')
             ptr++;
@@ -226,14 +226,14 @@ http_range_set_parse(struct http_range_set *set, const char *str) {
     return 0;
 
 error:
-    http_range_set_free(set);
+    http_ranges_free(set);
     return -1;
 }
 
 void
-http_range_set_simplify(const struct http_range_set *set, size_t entity_sz,
-                        struct http_range_set *dest) {
-    memset(dest, 0, sizeof(struct http_range_set));
+http_ranges_simplify(const struct http_ranges *set, size_t entity_sz,
+                     struct http_ranges *dest) {
+    memset(dest, 0, sizeof(struct http_ranges));
 
     dest->unit = set->unit;
 
@@ -315,8 +315,8 @@ http_range_set_simplify(const struct http_range_set *set, size_t entity_sz,
 }
 
 bool
-http_range_set_is_satisfiable(const struct http_range_set *set,
-                              size_t entity_sz) {
+http_ranges_is_satisfiable(const struct http_ranges *set,
+                           size_t entity_sz) {
     for (size_t i = 0; i < set->nb_ranges; i++) {
         struct http_range *range;
 
@@ -330,7 +330,7 @@ http_range_set_is_satisfiable(const struct http_range_set *set,
 }
 
 size_t
-http_range_set_length(const struct http_range_set *set) {
+http_ranges_length(const struct http_ranges *set) {
     size_t length;
 
     /* XXX Result is only correct if the range has been simplified */
@@ -348,8 +348,8 @@ http_range_set_length(const struct http_range_set *set) {
 }
 
 void
-http_range_set_add_range(struct http_range_set *set,
-                         const struct http_range *range) {
+http_ranges_add_range(struct http_ranges *set,
+                      const struct http_range *range) {
     if (set->nb_ranges == 0) {
         set->ranges = http_malloc(sizeof(struct http_range));
     } else {

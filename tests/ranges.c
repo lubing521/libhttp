@@ -21,22 +21,22 @@
 
 #define HTTPT_BEGIN_RANGE_SET(str_, nb_ranges_)                         \
     do {                                                                \
-        if (http_range_set_parse(&set, str_) == -1)                     \
+        if (http_ranges_parse(&set, str_) == -1)                        \
             TEST_ABORT("cannot parse range set: %s", http_get_error()); \
         TEST_UINT_EQ(set.nb_ranges, nb_ranges_);                        \
     } while (0)
 
 #define HTTPT_END_RANGE_SET() \
-    http_range_set_free(&set)
+    http_ranges_free(&set)
 
 #define HTTPT_INVALID_RANGE_SET(str_)                                   \
     do {                                                                \
-        if (http_range_set_parse(&set, str_) == 0)                      \
+        if (http_ranges_parse(&set, str_) == 0)                         \
             TEST_ABORT("parsed invalid range set");                     \
     } while (0)
 
 TEST(simple_range) {
-    struct http_range_set set;
+    struct http_ranges set;
 
     HTTPT_BEGIN_RANGE_SET("bytes=0-5", 1);
     TEST_INT_EQ(set.unit, HTTP_RANGE_UNIT_BYTES);
@@ -64,7 +64,7 @@ TEST(simple_range) {
 }
 
 TEST(no_first) {
-    struct http_range_set set;
+    struct http_ranges set;
 
     HTTPT_BEGIN_RANGE_SET("bytes=-5", 1);
     TEST_INT_EQ(set.unit, HTTP_RANGE_UNIT_BYTES);
@@ -89,7 +89,7 @@ TEST(no_first) {
 }
 
 TEST(no_last) {
-    struct http_range_set set;
+    struct http_ranges set;
 
     HTTPT_BEGIN_RANGE_SET("bytes=0-", 1);
     TEST_INT_EQ(set.unit, HTTP_RANGE_UNIT_BYTES);
@@ -114,7 +114,7 @@ TEST(no_last) {
 }
 
 TEST(multiple_ranges) {
-    struct http_range_set set;
+    struct http_ranges set;
 
     HTTPT_BEGIN_RANGE_SET("bytes=0-5,10-100\t,  2000-25000", 3);
     TEST_INT_EQ(set.unit, HTTP_RANGE_UNIT_BYTES);
@@ -151,7 +151,7 @@ TEST(multiple_ranges) {
 }
 
 TEST(invalid) {
-    struct http_range_set set;
+    struct http_ranges set;
 
     HTTPT_INVALID_RANGE_SET("");
     HTTPT_INVALID_RANGE_SET(" ");
@@ -171,22 +171,22 @@ TEST(invalid) {
 }
 
 TEST(simplify) {
-    struct http_range_set set, sset;
+    struct http_ranges set, sset;
 
 #define HTTPT_BEGIN_SIMPLIFIED_RANGE_SET(str_, nb_ranges_, entity_sz_,  \
                                          nb_sranges_)                   \
     do {                                                                \
-        if (http_range_set_parse(&set, str_) == -1)                     \
+        if (http_ranges_parse(&set, str_) == -1)                        \
             TEST_ABORT("cannot parse range set: %s", http_get_error()); \
         TEST_UINT_EQ(set.nb_ranges, nb_ranges_);                        \
-        http_range_set_simplify(&set, entity_sz_, &sset);               \
+        http_ranges_simplify(&set, entity_sz_, &sset);                  \
         TEST_UINT_EQ(sset.nb_ranges, nb_sranges_);                      \
     } while (0)
 
 #define HTTPT_END_SIMPLIFIED_RANGE_SET() \
     do {                                 \
-        http_range_set_free(&set);       \
-        http_range_set_free(&sset);      \
+        http_ranges_free(&set);          \
+        http_ranges_free(&sset);         \
     } while (0)
 
 #define HTTPT_SIMPLIFIED_RANGE_EQ(range_, first_, last_) \
@@ -261,17 +261,17 @@ TEST(simplify) {
 }
 
 TEST(unsatisfiable) {
-    struct http_range_set set;
+    struct http_ranges set;
 
 #define HTTPT_RANGE_SET_IS_SATISFIABLE(str_, nb_ranges_, entity_sz_,    \
                                        is_satisfiable_)                 \
     do {                                                                \
-        if (http_range_set_parse(&set, str_) == -1)                     \
+        if (http_ranges_parse(&set, str_) == -1)                        \
             TEST_ABORT("cannot parse range set: %s", http_get_error()); \
         TEST_UINT_EQ(set.nb_ranges, nb_ranges_);                        \
-        TEST_BOOL_EQ(http_range_set_is_satisfiable(&set, entity_sz_),   \
+        TEST_BOOL_EQ(http_ranges_is_satisfiable(&set, entity_sz_),      \
                      is_satisfiable_);                                  \
-        http_range_set_free(&set);                                      \
+        http_ranges_free(&set);                                         \
     } while (0)
 
     HTTPT_RANGE_SET_IS_SATISFIABLE("bytes=0-0", 1, 20, true);
@@ -286,16 +286,16 @@ TEST(unsatisfiable) {
 }
 
 TEST(length) {
-    struct http_range_set set, sset;
+    struct http_ranges set, sset;
 
 #define HTTPT_RANGE_SET_LENGTH_EQ(str_, entity_sz_, length_)             \
     do {                                                                 \
-        if (http_range_set_parse(&set, str_) == -1)                      \
+        if (http_ranges_parse(&set, str_) == -1)                         \
             TEST_ABORT("cannot parse range set: %s", http_get_error());  \
-        http_range_set_simplify(&set, entity_sz_, &sset);                \
-        TEST_UINT_EQ(http_range_set_length(&sset), length_);             \
-        http_range_set_free(&set);                                       \
-        http_range_set_free(&sset);                                      \
+        http_ranges_simplify(&set, entity_sz_, &sset);                   \
+        TEST_UINT_EQ(http_ranges_length(&sset), length_);                \
+        http_ranges_free(&set);                                          \
+        http_ranges_free(&sset);                                         \
     } while (0)
 
     HTTPT_RANGE_SET_LENGTH_EQ("bytes=0-0", 20, 1);

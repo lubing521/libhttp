@@ -470,16 +470,16 @@ http_request_query_parameter(const struct http_msg *msg, const char *name) {
 }
 
 bool
-http_request_has_range_set(const struct http_msg *msg) {
-    return msg->u.request.has_range_set;
+http_request_has_ranges(const struct http_msg *msg) {
+    return msg->u.request.has_ranges;
 }
 
-const struct http_range_set *
-http_request_range_set(const struct http_msg *msg) {
-    if (!msg->u.request.has_range_set)
+const struct http_ranges *
+http_request_ranges(const struct http_msg *msg) {
+    if (!msg->u.request.has_ranges)
         return NULL;
 
-    return &msg->u.request.range_set;
+    return &msg->u.request.ranges;
 }
 
 enum http_status_code
@@ -741,7 +741,7 @@ http_request_free(struct http_request *request) {
         http_named_parameter_free(request->named_parameters + i);
     http_free(request->named_parameters);
 
-    http_range_set_free(&request->range_set);
+    http_ranges_free(&request->ranges);
 }
 
 void
@@ -1870,10 +1870,10 @@ http_msg_process_headers(struct http_parser *parser) {
                 list = end;
             }
         } else if (msg->type == HTTP_MSG_REQUEST && HTTP_HEADER_IS("Range")) {
-            msg->u.request.has_range_set = true;
+            msg->u.request.has_ranges = true;
 
-            if (http_range_set_parse(&msg->u.request.range_set,
-                                     header->value) == -1) {
+            if (http_ranges_parse(&msg->u.request.ranges,
+                                  header->value) == -1) {
                 HTTP_ERROR(HTTP_BAD_REQUEST, "cannot parse ranges: %s",
                            http_get_error());
             }

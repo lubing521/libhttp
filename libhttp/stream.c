@@ -57,7 +57,7 @@ struct http_stream_file {
     char *path;
     struct bf_buffer *buf;
 
-    struct http_range_set ranges;
+    struct http_ranges ranges;
     size_t range_idx;        /* current range */
     size_t range_read_sz;    /* number of bytes read in the current range */
 
@@ -185,8 +185,8 @@ http_stream_add_file(struct http_stream *stream, int fd, size_t file_sz,
 
     file = http_stream_file_new(fd, file_sz, path);
 
-    http_range_set_init(&file->ranges);
-    http_range_set_add_range(&file->ranges, &range);
+    http_ranges_init(&file->ranges);
+    http_ranges_add_range(&file->ranges, &range);
 
     http_stream_add_entry(stream, (intptr_t)file, &http_stream_file_functions);
 }
@@ -194,7 +194,7 @@ http_stream_add_file(struct http_stream *stream, int fd, size_t file_sz,
 void
 http_stream_add_partial_file(struct http_stream *stream,
                              int fd, size_t file_sz, const char *path,
-                             const struct http_range_set *ranges) {
+                             const struct http_ranges *ranges) {
     struct http_stream_file *file;
 
     file = http_stream_file_new(fd, file_sz, path);
@@ -397,7 +397,7 @@ http_stream_file_delete(intptr_t arg) {
         close(file->fd);
     bf_buffer_delete(file->buf);
 
-    http_range_set_free(&file->ranges);
+    http_ranges_free(&file->ranges);
 
     memset(file, 0, sizeof(struct http_stream_file));
     http_free(file);

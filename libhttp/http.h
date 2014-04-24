@@ -151,10 +151,10 @@ enum http_range_unit {
     HTTP_RANGE_UNIT_BYTES,
 };
 
-struct http_range_set;
+struct http_ranges;
 
-bool http_range_set_is_satisfiable(const struct http_range_set *, size_t);
-size_t http_range_set_length(const struct http_range_set *);
+bool http_ranges_is_satisfiable(const struct http_ranges *, size_t);
+size_t http_ranges_length(const struct http_ranges *);
 
 struct http_msg;
 struct http_header;
@@ -190,8 +190,8 @@ const char *http_request_named_parameter(const struct http_msg *,
 bool http_request_has_query_parameter(const struct http_msg *, const char *);
 const char *http_request_query_parameter(const struct http_msg *, const char *);
 
-bool http_request_has_range_set(const struct http_msg *);
-const struct http_range_set *http_request_range_set(const struct http_msg *);
+bool http_request_has_ranges(const struct http_msg *);
+const struct http_ranges *http_request_ranges(const struct http_msg *);
 
 enum http_status_code http_response_status_code(const struct http_msg *);
 const char *http_response_reason_phrase(const struct http_msg *);
@@ -385,7 +385,7 @@ int http_connection_send_response_with_file(struct http_connection *,
                                             enum http_status_code,
                                             struct http_headers *,
                                             const char *,
-                                            const struct http_range_set *);
+                                            const struct http_ranges *);
 int http_connection_send_error(struct http_connection *, enum http_status_code,
                                const char *, ...)
     __attribute__((format(printf, 3, 4)));
@@ -407,7 +407,7 @@ void http_connection_write_headers_and_body(struct http_connection *,
 void http_connection_write_headers_and_file(struct http_connection *,
                                             struct http_headers *,
                                             const char *, int, size_t,
-                                            const struct http_range_set *);
+                                            const struct http_ranges *);
 
 /* MIME */
 struct http_media_type *http_media_type_new(const char *);
