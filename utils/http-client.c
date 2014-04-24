@@ -154,7 +154,7 @@ httpc_process_uri(struct http_uri *uri) {
     if (!client)
         httpc_die("%s", http_get_error());
 
-    if (http_client_send_request(client, HTTP_GET, uri) == -1)
+    if (http_client_send_request(client, HTTP_GET, uri, NULL) == -1)
         httpc_die("cannot send request: %s", http_get_error());
 
     httpc.do_exit = false;

@@ -78,7 +78,7 @@ void http_stream_add_vprintf(struct http_stream *, const char *, va_list);
 void http_stream_add_printf(struct http_stream *, const char *, ...);
 void http_stream_add_file(struct http_stream *, int, size_t, const char *);
 void http_stream_add_partial_file(struct http_stream *, int, size_t,
-                                  const char *, struct http_range_set *);
+                                  const char *, const struct http_range_set *);
 
 int http_stream_write(struct http_stream *, int, size_t *);
 
@@ -122,6 +122,11 @@ struct http_header {
 
 void http_header_init(struct http_header *);
 void http_header_free(struct http_header *);
+
+struct http_headers {
+    struct http_header *headers;
+    size_t nb_headers;
+};
 
 struct http_named_parameter {
     char *name;
@@ -420,7 +425,6 @@ bool http_server_does_listen_on_host_string(const struct http_server *,
                                             const char *);
 
 /* Clients */
-
 struct http_client {
     struct http_cfg *cfg;
 
@@ -436,9 +440,6 @@ struct http_client {
     char numeric_host_port[HTTP_HOST_PORT_BUFSZ];
 
     struct http_connection *connection;
-
-    struct http_header *headers;
-    size_t nb_headers;
 };
 
 void http_client_error(const struct http_client *, const char *, ...)

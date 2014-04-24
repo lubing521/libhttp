@@ -199,8 +199,16 @@ const char *http_response_reason_phrase(const struct http_msg *);
 const char *http_header_name(const struct http_header *);
 const char *http_header_value(const struct http_header *);
 
-char *http_format_content_disposition_attachment(const char *);
+struct http_headers *http_headers_new(void);
+void http_headers_delete(struct http_headers *);
 
+void http_headers_add_header(struct http_headers *, const char *, const char *);
+void http_headers_set_header(struct http_headers *, const char *, const char *);
+void http_headers_format_header(struct http_headers *, const char *,
+                                const char *, ...);
+void http_headers_remove_header(struct http_headers *, const char *);
+
+char *http_format_content_disposition_attachment(const char *);
 
 struct http_form_data;
 
@@ -341,17 +349,18 @@ void http_client_delete(struct http_client *client);
 
 struct http_connection *http_client_connection(const struct http_client *);
 
-void http_client_clear_headers(struct http_client *);
-void http_client_add_header(struct http_client *, const char *, const char *);
-
 int http_client_send_request(struct http_client *, enum http_method,
-                             const struct http_uri *);
+                             const struct http_uri *,
+                             struct http_headers *);
 int http_client_send_request_with_body(struct http_client *, enum http_method,
                                        const struct http_uri *,
+                                       struct http_headers *,
                                        const char *, size_t);
 int http_client_send_request_with_file(struct http_client *, enum http_method,
                                        const struct http_uri *,
-                                       int, const char *);
+                                       struct http_headers *,
+                                       const char *,
+                                       const struct http_range_set *);
 
 /* Connections */
 void http_connection_delete(struct http_connection *);
@@ -364,6 +373,19 @@ void http_connection_trace(struct http_connection *, const char *, ...)
 void http_connection_error(struct http_connection *, const char *, ...)
     __attribute__((format(printf, 2, 3)));
 
+int http_connection_send_response(struct http_connection *,
+                                  enum http_status_code,
+                                  struct http_headers *);
+int http_connection_send_response_with_body(struct http_connection *,
+                                            enum http_status_code,
+                                            struct http_headers *,
+                                            const char *, size_t);
+int http_connection_send_response_with_file(struct http_connection *,
+                                            enum http_status_code,
+                                            struct http_headers *,
+                                            const char *,
+                                            const struct http_range_set *);
+
 int http_connection_write_error(struct http_connection *,
                                 enum http_status_code,
                                 const char *, ...)
@@ -375,16 +397,18 @@ int http_connection_write_response(struct http_connection *,
                                    enum http_status_code, const char *);
 void http_connection_write_header(struct http_connection *,
                                   const char *, const char *);
+void http_connection_write_headers(struct http_connection *,
+                                   struct http_headers *);
 void http_connection_write_header_size(struct http_connection *,
                                        const char *, size_t);
-int http_connection_write_body(struct http_connection *,
-                               const char *, size_t);
-void http_connection_write_empty_body(struct http_connection *);
 
-int http_connection_write_file(struct http_connection *, int, const char *);
-int http_connection_write_partial_file(struct http_connection *,
-                                       int, const char *,
-                                       const struct http_range_set *);
+void http_connection_write_headers_and_body(struct http_connection *,
+                                            struct http_headers *,
+                                            const char *, size_t);
+void http_connection_write_headers_and_file(struct http_connection *,
+                                            struct http_headers *,
+                                            const char *, int, size_t,
+                                            const struct http_range_set *);
 
 /* MIME */
 struct http_media_type *http_media_type_new(const char *);

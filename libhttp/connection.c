@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -39,8 +40,8 @@ static void http_connection_call_response_handler(struct http_connection *,
                                                   struct http_msg *);
 static void http_connection_on_msg_processed(struct http_connection *);
 
-static int http_connection_write_request_headers(struct http_connection *);
-static int http_connection_write_response_headers(struct http_connection *);
+static int http_connection_init_response_headers(struct http_connection *,
+                                                 struct http_headers *);
 static int http_connection_write_error_body(struct http_connection *,
                                             enum http_status_code,
                                             const char *);
@@ -314,6 +315,123 @@ http_connection_error(struct http_connection *connection,
     }
 }
 
+int
+http_connection_send_response(struct http_connection *connection,
+                              enum http_status_code status_code,
+                              struct http_headers *headers) {
+    if (headers == NULL)
+        headers = http_headers_new();
+
+    if (http_connection_init_response_headers(connection, headers) == -1)
+        goto error;
+
+    if (http_connection_write_response(connection, status_code, NULL) == -1)
+        goto error;
+
+    http_connection_write_headers_and_body(connection, headers, NULL, 0);
+
+    http_headers_delete(headers);
+    return 0;
+
+error:
+    http_headers_delete(headers);
+    return -1;
+}
+
+int
+http_connection_send_response_with_body(struct http_connection *connection,
+                                        enum http_status_code status_code,
+                                        struct http_headers *headers,
+                                        const char *body, size_t bodysz) {
+    if (headers == NULL)
+        headers = http_headers_new();
+
+    if (http_connection_init_response_headers(connection, headers) == -1)
+        goto error;
+
+    if (http_connection_write_response(connection, status_code, NULL) == -1)
+        goto error;
+
+    http_connection_write_headers_and_body(connection, headers, body, bodysz);
+
+    http_headers_delete(headers);
+    return 0;
+
+error:
+    http_headers_delete(headers);
+    return -1;
+}
+
+int
+http_connection_send_response_with_file(struct http_connection *connection,
+                                        enum http_status_code status_code,
+                                        struct http_headers *headers,
+                                        const char *path,
+                                        const struct http_range_set *ranges) {
+    struct http_range_set simplified_ranges;
+    struct stat st;
+    size_t file_sz, range_length, content_length;
+    int fd;
+
+    fd = -1;
+
+    /* Open the file */
+    fd = open(path, O_RDONLY, path);
+    if (fd == -1) {
+        http_set_error("cannot open file %s: %s", path, strerror(errno));
+        goto error;
+    }
+
+    if (fstat(fd, &st) == -1) {
+        http_set_error("cannot stat file %s: %s", path, strerror(errno));
+        goto error;
+    }
+
+    file_sz = (size_t)st.st_size;
+
+    /* Check the ranges if there are any */
+    if (ranges) {
+        http_range_set_simplify(ranges, file_sz, &simplified_ranges);
+        range_length = http_range_set_length(&simplified_ranges);
+
+        if (!http_range_set_is_satisfiable(&simplified_ranges, file_sz)) {
+            /* TODO HTTP_REQUEST_RANGE_NOT_SATISFIABLE */
+            http_set_error("range not satisfiable");
+            goto error;
+        }
+
+        ranges = &simplified_ranges;
+    }
+
+    /* Send the response */
+    if (headers == NULL)
+        headers = http_headers_new();
+
+    if (http_connection_init_response_headers(connection, headers) == -1)
+        goto error;
+
+    if (ranges) {
+        content_length = range_length;
+    } else {
+        content_length = file_sz;
+    }
+
+    if (http_connection_write_response(connection, status_code, NULL) == -1)
+        goto error;
+
+    http_connection_write_headers_and_file(connection, headers,
+                                           path, fd, file_sz, ranges);
+
+    http_headers_delete(headers);
+    return 0;
+
+error:
+    if (fd >= 0)
+        close(fd);
+    http_headers_delete(headers);
+    return -1;
+}
+
 void
 http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
     struct http_connection *connection;
@@ -560,84 +678,59 @@ http_connection_write_header_size(struct http_connection *connection,
     http_connection_printf(connection, "%s: %zu\r\n", name, value);
 }
 
-int
-http_connection_write_body(struct http_connection *connection,
-                           const char *buf, size_t sz) {
-    if (connection->type == HTTP_CONNECTION_SERVER) {
-        if (http_connection_write_response_headers(connection) == -1)
-            return -1;
-    } else {
-        if (http_connection_write_request_headers(connection) == -1)
-            return -1;
+void
+http_connection_write_headers(struct http_connection *connection,
+                              struct http_headers *headers) {
+    for (size_t i = 0; i < headers->nb_headers; i++) {
+        struct http_header *header;
+
+        header = headers->headers + i;
+        http_connection_write_header(connection, header->name, header->value);
     }
-
-    http_connection_write_header_size(connection, "Content-Length", sz);
-    http_connection_write(connection, "\r\n", 2);
-    http_connection_write(connection, buf, sz);
-
-    return 0;
 }
 
 void
-http_connection_write_empty_body(struct http_connection *connection) {
-    http_connection_write_header(connection, "Content-Length", "0");
+http_connection_write_headers_and_body(struct http_connection *connection,
+                                       struct http_headers *headers,
+                                       const char *body, size_t bodysz) {
+
+    if (body) {
+        http_headers_format_header(headers, "Content-Length", "%zu", bodysz);
+    }
+
+    http_connection_write_headers(connection, headers);
     http_connection_write(connection, "\r\n", 2);
+
+    if (body) {
+        http_connection_write(connection, body, bodysz);
+    }
 }
 
-int
-http_connection_write_file(struct http_connection *connection, int fd,
-                           const char *path) {
-    struct stat st;
-    size_t file_sz;
+void
+http_connection_write_headers_and_file(struct http_connection *connection,
+                                       struct http_headers *headers,
+                                       const char *path, int fd, size_t file_sz,
+                                       const struct http_range_set *ranges) {
+    size_t content_length;
 
-    if (fstat(fd, &st) == -1) {
-        /* TODO HTTP_INTERNAL_SERVER_ERROR */
-        http_set_error("cannot stat file %s: %s", path, strerror(errno));
-        return -1;
+    if (ranges) {
+        content_length = http_range_set_length(ranges);
+    } else {
+        content_length = file_sz;
     }
 
-    file_sz = (size_t)st.st_size;
+    http_headers_format_header(headers, "Content-Length",
+                               "%zu", content_length);
 
-    http_connection_write_header_size(connection, "Content-Length", file_sz);
+    http_connection_write_headers(connection, headers);
     http_connection_write(connection, "\r\n", 2);
 
-    http_stream_add_file(connection->wstream, fd, file_sz, path);
-    return 0;
-}
-
-int
-http_connection_write_partial_file(struct http_connection *connection,
-                                   int fd, const char *path,
-                                   const struct http_range_set *range_set) {
-    struct http_range_set set;
-    struct stat st;
-    size_t file_sz, range_length;
-
-    if (fstat(fd, &st) == -1) {
-        /* TODO HTTP_INTERNAL_SERVER_ERROR */
-        http_set_error("cannot stat file %s: %s", path, strerror(errno));
-        return -1;
+    if (ranges) {
+        http_stream_add_partial_file(connection->wstream, fd, file_sz, path,
+                                     ranges);
+    } else {
+        http_stream_add_file(connection->wstream, fd, file_sz, path);
     }
-
-    file_sz = (size_t)st.st_size;
-
-    if (!http_range_set_is_satisfiable(range_set, file_sz)) {
-        /* TODO HTTP_REQUEST_RANGE_NOT_SATISFIABLE */
-        http_set_error("range not satisfiable");
-        return -1;
-    }
-
-    http_range_set_simplify(range_set, file_sz, &set);
-    range_length = http_range_set_length(&set);
-
-    /* TODO Must include MIME data (boundaries, etc.) */
-    http_connection_write_header_size(connection, "Content-Length",
-                                      range_length);
-    http_connection_write(connection, "\r\n", 2);
-
-    http_stream_add_partial_file(connection->wstream, fd, file_sz,
-                                 path, &set);
-    return 0;
 }
 
 static int
@@ -912,18 +1005,19 @@ http_connection_write_request_headers(struct http_connection *connection) {
 }
 
 static int
-http_connection_write_response_headers(struct http_connection *connection) {
+http_connection_init_response_headers(struct http_connection *connection,
+                                      struct http_headers *headers) {
     const struct http_cfg *cfg;
     char date[HTTP_RFC1123_DATE_BUFSZ];
 
-    cfg = connection->server->cfg;
+    cfg = http_connection_get_cfg(connection);
 
     if (http_format_timestamp(date, HTTP_RFC1123_DATE_BUFSZ,
                               time(NULL)) == -1) {
         return -1;
     }
 
-    http_connection_write_header(connection, "Date", date);
+    http_headers_set_header(headers, "Date", date);
     return 0;
 }
 

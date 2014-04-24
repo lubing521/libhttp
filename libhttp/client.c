@@ -19,18 +19,21 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <fcntl.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 
 #include "http.h"
 #include "internal.h"
 
 static void http_client_disconnect(struct http_client *);
 
-static int  http_client_start_request(struct http_client *, enum http_method,
-                                      const struct http_uri *);
+static void  http_client_init_request_headers(struct http_client *,
+                                              const struct http_uri *,
+                                              struct http_headers *);
 
 struct http_client *
 http_client_new(struct http_cfg *cfg, struct event_base *ev_base) {
@@ -147,38 +150,8 @@ http_client_delete(struct http_client *client) {
 
     http_connection_delete(client->connection);
 
-    http_client_clear_headers(client);
-
     memset(client, 0, sizeof(struct http_client));
     http_free(client);
-}
-
-void
-http_client_clear_headers(struct http_client *client) {
-    for (size_t i = 0; i < client->nb_headers; i++)
-        http_header_free(client->headers + i);
-    http_free(client->headers);
-}
-
-void
-http_client_add_header(struct http_client *client,
-                       const char *name, const char *value) {
-    struct http_header *header;
-
-    if (client->nb_headers == 0) {
-        client->headers = http_malloc(sizeof(struct http_header));
-    } else {
-        size_t nsz;
-
-        nsz = (client->nb_headers + 1) * sizeof(struct http_header);
-        client->headers = http_realloc(client->headers, nsz);
-    }
-
-    header = client->headers + client->nb_headers;
-    header->name = http_strdup(name);
-    header->value = http_strdup(value);
-
-    client->nb_headers++;
 }
 
 struct http_connection *
@@ -188,30 +161,53 @@ http_client_connection(const struct http_client *client) {
 
 int
 http_client_send_request(struct http_client *client, enum http_method method,
-                         const struct http_uri *uri) {
-    if (http_client_start_request(client, method, uri) == -1)
-        return -1;
+                         const struct http_uri *uri,
+                         struct http_headers *headers) {
+    if (headers == NULL)
+        headers = http_headers_new();
 
-    http_connection_write_empty_body(client->connection);
+    http_client_init_request_headers(client, uri, headers);
+
+    if (http_connection_write_request(client->connection, method, uri) == -1)
+        goto error;
+
+    http_connection_write_headers(client->connection, headers);
+    http_connection_write(client->connection, "\r\n", 2);
+
+    http_headers_delete(headers);
     return 0;
+
+error:
+    http_headers_delete(headers);
+    http_client_disconnect(client);
+    return -1;
 }
 
 int
 http_client_send_request_with_body(struct http_client *client,
                                    enum http_method method,
                                    const struct http_uri *uri,
-                                   const char *body, size_t sz) {
-    if (http_client_start_request(client, method, uri) == -1)
-        return -1;
+                                   struct http_headers *headers,
+                                   const char *body, size_t bodysz) {
+    if (headers == NULL)
+        headers = http_headers_new();
 
-    http_connection_write_header_size(client->connection, "Content-Length", sz);
+    http_client_init_request_headers(client, uri, headers);
 
-    if (http_connection_write_body(client->connection, body, sz) == -1)
+    http_headers_format_header(headers, "Content-Length", "%zu", bodysz);
+
+    if (http_connection_write_request(client->connection, method, uri) == -1)
         goto error;
 
+    http_connection_write_headers(client->connection, headers);
+    http_connection_write(client->connection, "\r\n", 2);
+    http_connection_write(client->connection, body, bodysz);
+
+    http_headers_delete(headers);
     return 0;
 
 error:
+    http_headers_delete(headers);
     http_client_disconnect(client);
     return -1;
 }
@@ -220,17 +216,68 @@ int
 http_client_send_request_with_file(struct http_client *client,
                                    enum http_method method,
                                    const struct http_uri *uri,
-                                   int fd, const char *filename) {
-    if (http_client_start_request(client, method, uri) == -1)
-        return -1;
+                                   struct http_headers *headers,
+                                   const char *path,
+                                   const struct http_range_set *ranges) {
+    struct http_range_set simplified_ranges;
+    struct stat st;
+    size_t file_sz, range_length, content_length;
+    int fd;
 
-    if (http_connection_write_file(client->connection, fd, filename) == -1)
+    /* Open the file */
+    fd = open(path, O_RDONLY, path);
+    if (fd == -1) {
+        http_set_error("cannot open file %s: %s", path, strerror(errno));
+        return -1;
+    }
+
+    if (fstat(fd, &st) == -1) {
+        http_set_error("cannot stat file %s: %s", path, strerror(errno));
+        return -1;
+    }
+
+    file_sz = (size_t)st.st_size;
+
+    /* Check the ranges if there are any */
+    if (ranges) {
+        http_range_set_simplify(ranges, file_sz, &simplified_ranges);
+        range_length = http_range_set_length(&simplified_ranges);
+    }
+
+    /* Send the response */
+    if (headers == NULL)
+        headers = http_headers_new();
+
+    http_client_init_request_headers(client, uri, headers);
+
+    if (ranges) {
+        content_length = range_length;
+    } else {
+        content_length = file_sz;
+    }
+
+    http_headers_format_header(headers, "Content-Length",
+                               "%zu", content_length);
+
+    if (http_connection_write_request(client->connection, method, uri) == -1)
         goto error;
 
+    http_connection_write_headers(client->connection, headers);
+    http_connection_write(client->connection, "\r\n", 2);
+
+    if (ranges) {
+        http_stream_add_partial_file(client->connection->wstream,
+                                     fd, file_sz, path,
+                                     &simplified_ranges);
+    } else {
+        http_stream_add_file(client->connection->wstream, fd, file_sz, path);
+    }
+
+    http_headers_delete(headers);
     return 0;
 
 error:
-    http_client_disconnect(client);
+    http_headers_delete(headers);
     return -1;
 }
 
@@ -270,30 +317,9 @@ http_client_disconnect(struct http_client *client) {
     client->connection = NULL;
 }
 
-static int
-http_client_start_request(struct http_client *client, enum http_method method,
-                          const struct http_uri *uri) {
-    const char *host;
-
-    host = uri->host;
-
-    if (http_connection_write_request(client->connection, method, uri) == -1)
-        goto error;
-
-    http_connection_write_header(client->connection, "Host", host);
-
-    for (size_t i = 0; i < client->nb_headers; i++) {
-        struct http_header *header;
-
-        header = client->headers + i;
-
-        http_connection_write_header(client->connection,
-                                     header->name, header->value);
-    }
-
-    return 0;
-
-error:
-    http_client_disconnect(client);
-    return -1;
+static void
+http_client_init_request_headers(struct http_client *client,
+                                 const struct http_uri *uri,
+                                 struct http_headers *headers) {
+    http_headers_set_header(headers, "Host", uri->host);
 }

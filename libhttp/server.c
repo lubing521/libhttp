@@ -201,9 +201,10 @@ int
 http_default_error_body_writer(struct http_connection *connection,
                                enum http_status_code status_code,
                                const char *description) {
+    struct http_headers *headers;
     const char *reason_phrase;
     char *body;
-    size_t len;
+    size_t bodysz;
     int ret;
 
     reason_phrase = http_status_code_to_reason_phrase(status_code);
@@ -221,15 +222,12 @@ http_default_error_body_writer(struct http_connection *connection,
     if (ret == -1)
         return -1;
 
-    len = (size_t)ret;
+    bodysz = (size_t)ret;
 
-    http_connection_write_header(connection, "Content-Type", "text/html");
-    http_connection_write_header_size(connection, "Content-Length", len);
+    headers = http_headers_new();
+    http_headers_set_header(headers, "Content-Type", "text/html");
 
-    if (http_connection_write_body(connection, body, len) == -1) {
-        http_free(body);
-        return -1;
-    }
+    http_connection_write_headers_and_body(connection, headers, body, bodysz);
 
     http_free(body);
     return 0;

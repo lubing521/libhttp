@@ -249,15 +249,18 @@ https_on_request(struct http_connection *connection,
 static void
 https_foo_get(struct http_connection *connection, const struct http_msg *msg,
               void *arg) {
+    struct http_headers *headers;
     const char *body;
-    size_t body_len;
+    size_t bodysz;
 
     body = "GET /foo\n";
-    body_len = strlen(body);
+    bodysz = strlen(body);
 
-    http_connection_write_response(connection, HTTP_OK, NULL);
-    http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_body(connection, body, body_len);
+    headers = http_headers_new();
+    http_headers_set_header(headers, "Content-Type", "text/plain");
+
+    http_connection_send_response_with_body(connection, HTTP_OK, headers,
+                                            body, bodysz);
 }
 
 static void
@@ -265,8 +268,9 @@ https_foo_post(struct http_connection *connection, const struct http_msg *msg,
                void *arg) {
     static size_t content_len = 0;
 
+    struct http_headers *headers;
     char body[128];
-    size_t body_len;
+    size_t bodysz;
 
     content_len += http_msg_body_length(msg);
 
@@ -277,11 +281,13 @@ https_foo_post(struct http_connection *connection, const struct http_msg *msg,
         return;
 
     snprintf(body, sizeof(body), "%zu bytes received\n", content_len);
-    body_len = strlen(body);
+    bodysz = strlen(body);
 
-    http_connection_write_response(connection, HTTP_OK, NULL);
-    http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_body(connection, body, body_len);
+    headers = http_headers_new();
+    http_headers_set_header(headers, "Content-Type", "text/plain");
+
+    http_connection_send_response_with_body(connection, HTTP_OK, headers,
+                                            body, bodysz);
 
     content_len = 0;
 }
@@ -289,89 +295,61 @@ https_foo_post(struct http_connection *connection, const struct http_msg *msg,
 static void
 https_foo_bar_get(struct http_connection *connection,
                   const struct http_msg *msg, void *arg) {
+    struct http_headers *headers;
     const char *body;
-    size_t body_len;
+    size_t bodysz;
 
     body = "GET /foo/bar\n";
-    body_len = strlen(body);
+    bodysz = strlen(body);
 
-    http_connection_write_response(connection, HTTP_OK, NULL);
-    http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_body(connection, body, body_len);
+    headers = http_headers_new();
+    http_headers_set_header(headers, "Content-Type", "text/plain");
+
+    http_connection_send_response_with_body(connection, HTTP_OK, headers,
+                                            body, bodysz);
 }
 
 static void
 https_license_get(struct http_connection *connection,
                   const struct http_msg *msg, void *arg) {
+    struct http_headers *headers;
     enum http_status_code status_code;
     const char *path;
-    int fd, ret;
-    struct stat st;
-    size_t sz;
 
     path = "./LICENSE";
 
-    fd = open(path, O_RDONLY);
-    if (fd == -1) {
-        if (errno == ENOENT) {
-            http_connection_write_error(connection, HTTP_NOT_FOUND, NULL);
-        } else {
-            http_connection_write_error(connection, HTTP_INTERNAL_SERVER_ERROR,
-                                        "cannot open %s: %s",
-                                        path, strerror(errno));
-        }
-
-        return;
-    }
-
-    if (fstat(fd, &st) == -1)
-        https_die("cannot stat file %s: %s", path, strerror(errno));
-
-    sz = (size_t)st.st_size;
-
     if (http_request_has_range_set(msg)) {
-        if (!http_range_set_is_satisfiable(http_request_range_set(msg), sz)) {
-            http_connection_write_error(connection,
-                                        HTTP_REQUEST_RANGE_NOT_SATISFIABLE,
-                                        NULL);
-            return;
-        }
-
         status_code = HTTP_PARTIAL_CONTENT;
     } else {
         status_code = HTTP_OK;
     }
 
-    http_connection_write_response(connection, status_code, NULL);
-    http_connection_write_header(connection, "Content-Type", "text/plain");
+    headers = http_headers_new();
+    http_headers_set_header(headers, "Content-Type", "text/plain");
 
-    if (http_request_has_range_set(msg)) {
-        ret = http_connection_write_partial_file(connection, fd, path,
-                                                 http_request_range_set(msg));
-    } else {
-        ret = http_connection_write_file(connection, fd, path);
-    }
-
-    if (ret == -1)
-        http_connection_delete(connection);
+    http_connection_send_response_with_file(connection, status_code, headers,
+                                            path, http_request_range_set(msg));
 }
 
 static void
 https_upload_buffered_post(struct http_connection *connection,
                            const struct http_msg *msg, void *arg) {
+    struct http_headers *headers;
     char body[128];
-    size_t body_len;
+    size_t bodysz;
 
     http_connection_trace(connection, "%zu bytes received",
                           http_msg_body_length(msg));
 
     snprintf(body, sizeof(body), "%zu bytes received\n",
              http_msg_body_length(msg));
-    body_len = strlen(body);
+    bodysz = strlen(body);
 
-    http_connection_write_response(connection, HTTP_OK, NULL);
-    http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_body(connection, body, body_len);
+    headers = http_headers_new();
+    http_headers_set_header(headers, "Content-Type", "text/plain");
+
+    http_connection_send_response_with_body(connection, HTTP_OK, headers,
+                                            body, bodysz);
 }
 
 static void
@@ -379,8 +357,9 @@ https_upload_unbuffered_post(struct http_connection *connection,
                              const struct http_msg *msg, void *arg) {
     static size_t content_len = 0;
 
+    struct http_headers *headers;
     char body[128];
-    size_t body_len;
+    size_t bodysz;
 
     if (http_msg_aborted(msg)) {
         http_connection_error(connection, "request processing aborted");
@@ -396,12 +375,15 @@ https_upload_unbuffered_post(struct http_connection *connection,
     if (!http_msg_is_complete(msg))
         return;
 
+    /* Send response */
     snprintf(body, sizeof(body), "%zu bytes received\n", content_len);
-    body_len = strlen(body);
+    bodysz = strlen(body);
 
-    http_connection_write_response(connection, HTTP_OK, NULL);
-    http_connection_write_header(connection, "Content-Type", "text/plain");
-    http_connection_write_body(connection, body, body_len);
+    headers = http_headers_new();
+    http_headers_set_header(headers, "Content-Type", "text/plain");
+
+    http_connection_send_response_with_body(connection, HTTP_OK, headers,
+                                            body, bodysz);
 
     content_len = 0;
 }

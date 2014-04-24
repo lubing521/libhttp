@@ -194,7 +194,7 @@ http_stream_add_file(struct http_stream *stream, int fd, size_t file_sz,
 void
 http_stream_add_partial_file(struct http_stream *stream,
                              int fd, size_t file_sz, const char *path,
-                             struct http_range_set *ranges) {
+                             const struct http_range_set *ranges) {
     struct http_stream_file *file;
 
     file = http_stream_file_new(fd, file_sz, path);
@@ -219,7 +219,11 @@ http_stream_write(struct http_stream *stream, int fd, size_t *psz) {
         http_stream_remove_first_entry(stream);
         http_stream_entry_delete(entry);
 
-        return stream->first_entry ? 1 : 0;
+        if (ret == -1) {
+            return -1;
+        } else {
+            return stream->first_entry ? 1 : 0;
+        }
     }
 
     return 1;

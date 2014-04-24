@@ -217,6 +217,118 @@ http_header_value(const struct http_header *header) {
     return header->value;
 }
 
+struct http_headers *
+http_headers_new(void) {
+    struct http_headers *headers;
+
+    headers = http_malloc(sizeof(struct http_headers));
+    memset(headers, 0, sizeof(struct http_headers));
+
+    return headers;
+}
+
+void
+http_headers_delete(struct http_headers *headers) {
+    if (!headers)
+        return;
+
+    for (size_t i = 0; i < headers->nb_headers; i++)
+        http_header_free(headers->headers + i);
+    http_free(headers->headers);
+
+    memset(headers, 0, sizeof(struct http_headers));
+    http_free(headers);
+}
+
+void
+http_headers_add_header(struct http_headers *headers,
+                        const char *name, const char *value) {
+    struct http_header *header;
+
+    if (headers->nb_headers == 0) {
+        headers->headers = http_malloc(sizeof(struct http_header));
+    } else {
+        size_t nsz;
+
+        nsz = (headers->nb_headers + 1) * sizeof(struct http_header);
+        headers->headers = http_realloc(headers->headers, nsz);
+    }
+
+    header = headers->headers + headers->nb_headers;
+    header->name = http_strdup(name);
+    header->value = http_strdup(value);
+
+    headers->nb_headers++;
+}
+
+void
+http_headers_set_header(struct http_headers *headers,
+                        const char *name, const char *value) {
+    for (size_t i = 0; i < headers->nb_headers; i++) {
+        struct http_header *header;
+
+        header = headers->headers + i;
+
+        if (strcasecmp(header->name, name) == 0) {
+            http_free(header->value);
+            header->value = http_strdup(value);
+            return;
+        }
+    }
+
+    http_headers_add_header(headers, name, value);
+}
+
+void
+http_headers_format_header(struct http_headers *headers, const char *name,
+                           const char *fmt, ...) {
+    va_list ap;
+    char *value;
+
+    va_start(ap, fmt);
+    http_vasprintf(&value, fmt, ap);
+    va_end(ap);
+
+    for (size_t i = 0; i < headers->nb_headers; i++) {
+        struct http_header *header;
+
+        header = headers->headers + i;
+
+        if (strcasecmp(header->name, name) == 0) {
+            http_free(header->value);
+            header->value = value;
+            return;
+        }
+    }
+
+    http_headers_add_header(headers, name, value);
+    http_free(value);
+}
+
+void
+http_headers_remove_header(struct http_headers *headers, const char *name) {
+    for (size_t i = 0; i < headers->nb_headers; i++) {
+        struct http_header *header;
+
+        header = headers->headers + i;
+
+        if (strcasecmp(header->name, name) == 0) {
+            size_t nb_moved;
+            size_t nsz;
+
+            nb_moved = headers->nb_headers - i - 1;
+            memmove(header, headers->headers + i + 1,
+                    nb_moved * sizeof(struct http_header));
+
+            headers->nb_headers--;
+
+            nsz = headers->nb_headers * sizeof(struct http_header);
+            headers->headers = http_realloc(headers->headers, nsz);
+            break;
+        }
+    }
+}
+
 char *
 http_format_content_disposition_attachment(const char *filename) {
     const char *prefix, *suffix;
@@ -1784,12 +1896,10 @@ ignore_header:
         /* RFC 2616 8.2.3: The origin server MUST NOT wait for the request
          * body before sending the 100 (Continue) response. */
         if (msg->u.request.expects_100_continue) {
-            if (http_connection_write_response(parser->connection,
-                                               HTTP_CONTINUE, NULL) == -1) {
+            if (http_connection_send_response(parser->connection,
+                                              HTTP_CONTINUE, NULL) == -1) {
                 return -1;
             }
-
-            http_connection_write_empty_body(parser->connection);
         }
     }
 
