@@ -1045,6 +1045,9 @@ http_parser_are_headers_read(struct http_parser *parser) {
     case HTTP_PARSER_DONE:
         return true;
     }
+
+    /* Should never happen */
+    return false;
 }
 
 void
@@ -1754,14 +1757,10 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
 
 static int
 http_msg_process_headers(struct http_parser *parser) {
-    struct http_connection *connection;
-    const struct http_cfg *cfg;
     struct http_msg *msg;
     const char *host;
     bool has_transfer_encoding;
 
-    connection = parser->connection;
-    cfg = parser->cfg;
     msg = &parser->msg;
 
     host = NULL;

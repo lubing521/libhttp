@@ -142,7 +142,6 @@ http_stream_add_data(struct http_stream *stream, const void *data, size_t sz) {
         buf = bf_buffer_new(0);
         http_stream_add_entry(stream, (intptr_t)buf,
                               &http_stream_buffer_functions);
-        entry = stream->last_entry;
     }
 
     bf_buffer_add(buf, data, sz);
@@ -161,7 +160,6 @@ http_stream_add_vprintf(struct http_stream *stream,
         buf = bf_buffer_new(0);
         http_stream_add_entry(stream, (intptr_t)buf,
                               &http_stream_buffer_functions);
-        entry = stream->last_entry;
     }
 
     bf_buffer_add_vprintf(buf, fmt, ap);

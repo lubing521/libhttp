@@ -343,12 +343,10 @@ http_connection_send_response_with_file(struct http_connection *connection,
                                         size_t file_sz,
                                         const struct http_ranges *ranges) {
     struct http_ranges simplified_ranges;
-    size_t range_length, content_length;
 
     /* Check the ranges if there are any */
     if (ranges) {
         http_ranges_simplify(ranges, file_sz, &simplified_ranges);
-        range_length = http_ranges_length(&simplified_ranges);
 
         if (!http_ranges_is_satisfiable(&simplified_ranges, file_sz)) {
             /* TODO HTTP_REQUEST_RANGE_NOT_SATISFIABLE */
@@ -365,12 +363,6 @@ http_connection_send_response_with_file(struct http_connection *connection,
 
     if (http_connection_init_response_headers(connection, headers) == -1)
         goto error;
-
-    if (ranges) {
-        content_length = range_length;
-    } else {
-        content_length = file_sz;
-    }
 
     if (http_connection_write_response(connection, status_code, NULL) == -1)
         goto error;
@@ -1031,23 +1023,9 @@ http_connection_on_msg_processed(struct http_connection *connection) {
 }
 
 static int
-http_connection_write_request_headers(struct http_connection *connection) {
-    const struct http_cfg *cfg;
-
-    cfg = connection->client->cfg;
-
-    /* TODO */
-
-    return 0;
-}
-
-static int
 http_connection_init_response_headers(struct http_connection *connection,
                                       struct http_headers *headers) {
-    const struct http_cfg *cfg;
     char date[HTTP_RFC1123_DATE_BUFSZ];
-
-    cfg = http_connection_get_cfg(connection);
 
     if (http_format_timestamp(date, HTTP_RFC1123_DATE_BUFSZ,
                               time(NULL)) == -1) {
