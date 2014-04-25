@@ -1758,12 +1758,15 @@ http_msg_process_headers(struct http_parser *parser) {
     const struct http_cfg *cfg;
     struct http_msg *msg;
     const char *host;
+    bool has_transfer_encoding;
 
     connection = parser->connection;
     cfg = parser->cfg;
     msg = &parser->msg;
 
     host = NULL;
+
+    has_transfer_encoding = false;
 
     for (size_t i = 0; i < msg->nb_headers; i++) {
         const struct http_header *header;
@@ -1813,6 +1816,14 @@ http_msg_process_headers(struct http_parser *parser) {
                 list = end;
             }
         } else if (HTTP_HEADER_IS("Content-Length")) {
+            if (has_transfer_encoding) {
+                /* RFC 2616 4.3: If a message is received with both a
+                 * Transfer-Encoding header field and a Content-Length header
+                 * field, the latter MUST be ignored. */
+
+                goto ignore_header;
+            }
+
             msg->has_content_length = true;
 
             if (http_parse_size(header->value, &msg->content_length) == -1) {
@@ -1850,8 +1861,11 @@ http_msg_process_headers(struct http_parser *parser) {
                                    "Transfer-Encoding header");
                     }
 
+                    has_transfer_encoding = true;
                     is_chunked = true;
                     msg->is_body_chunked = true;
+                } else if (strcasecmp(token, "identity") == 0) {
+                    /* Default transfer encoding */
                 } else {
                     HTTP_ERROR(HTTP_NOT_IMPLEMENTED,
                                "unknown transfer encoding '%s'", token);
