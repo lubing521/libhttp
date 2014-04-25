@@ -688,14 +688,18 @@ http_connection_write_headers_and_file(struct http_connection *connection,
     char *mime_footer;
     size_t content_length;
 
+    if (ranges) {
+        content_length = http_ranges_length(ranges);
+    } else {
+        content_length = file_sz;
+    }
+
     if (ranges && ranges->nb_ranges > 1) {
         char boundary[HTTP_MIME_BOUNDARY_SZ];
         const char *content_type;
         int ret;
 
         /* Generate a MIME document of type multipart/byteranges. */
-
-        content_length = http_ranges_length(ranges);
 
         /* Extract the content type to include it in MIME headers */
         content_type = http_headers_get_header(headers, "Content-Type");
@@ -732,8 +736,6 @@ http_connection_write_headers_and_file(struct http_connection *connection,
                                    "multipart/byteranges; boundary=%s",
                                    boundary);
     } else {
-        content_length = file_sz;
-
         nb_mime_parts = 0;
         mime_part_headers = NULL;
         mime_footer = NULL;
