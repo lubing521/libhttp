@@ -336,8 +336,14 @@ http_headers_remove_header(struct http_headers *headers, const char *name) {
 
             headers->nb_headers--;
 
-            nsz = headers->nb_headers * sizeof(struct http_header);
-            headers->headers = http_realloc(headers->headers, nsz);
+            if (headers->nb_headers == 0) {
+                http_free(headers->headers);
+                headers->headers = NULL;
+            } else {
+                nsz = headers->nb_headers * sizeof(struct http_header);
+                headers->headers = http_realloc(headers->headers, nsz);
+            }
+
             break;
         }
     }

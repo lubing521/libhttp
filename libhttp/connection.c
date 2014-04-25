@@ -401,7 +401,6 @@ http_connection_send_error(struct http_connection *connection,
     ret = cfg->u.server.error_sender(connection, status_code, headers,
                                      fmt ? errmsg : NULL);
 
-    http_headers_delete(headers);
     return ret;
 }
 
