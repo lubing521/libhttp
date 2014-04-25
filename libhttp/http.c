@@ -240,6 +240,20 @@ http_headers_delete(struct http_headers *headers) {
     http_free(headers);
 }
 
+const char *
+http_headers_get_header(struct http_headers *headers, const char *name) {
+    for (size_t i = 0; i < headers->nb_headers; i++) {
+        struct http_header *header;
+
+        header = headers->headers + i;
+
+        if (strcasecmp(header->name, name) == 0)
+            return header->value;
+    }
+
+    return NULL;
+}
+
 void
 http_headers_add_header(struct http_headers *headers,
                         const char *name, const char *value) {

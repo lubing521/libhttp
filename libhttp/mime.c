@@ -195,6 +195,23 @@ http_mime_q_encode(const char *string) {
     return encoded_string;
 }
 
+void
+http_mime_generate_boundary(char boundary[static HTTP_MIME_BOUNDARY_SZ],
+                            size_t sz) {
+    static char *characters = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+    size_t nb_characters;
+
+    /* TODO Use a real random number generator to generate random bytes and
+     * base64 the result. */
+
+    nb_characters = strlen(characters);
+
+    for (size_t i = 0; i < sz - 1; i++)
+        boundary[i] = characters[(size_t)rand() % nb_characters];
+    boundary[sz - 1] = '\0';
+}
+
 static bool
 http_is_media_type_char(unsigned char c) {
     static uint32_t table[8] = {

@@ -78,7 +78,8 @@ void http_stream_add_vprintf(struct http_stream *, const char *, va_list);
 void http_stream_add_printf(struct http_stream *, const char *, ...);
 void http_stream_add_file(struct http_stream *, int, size_t, const char *);
 void http_stream_add_partial_file(struct http_stream *, int, size_t,
-                                  const char *, const struct http_ranges *);
+                                  const char *, const struct http_ranges *,
+                                  char **, size_t, char *);
 
 int http_stream_write(struct http_stream *, int, size_t *);
 

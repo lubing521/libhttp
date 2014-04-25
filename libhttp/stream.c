@@ -62,6 +62,11 @@ struct http_stream_file {
     size_t range_read_sz;    /* number of bytes read in the current range */
 
     bool done_reading;
+
+    /* For multipart/byteranges documents */
+    char **mime_part_headers;
+    size_t nb_mime_parts;
+    char *mime_footer;
 };
 
 static struct http_stream_file *http_stream_file_new(int, size_t, const char *);
@@ -194,11 +199,17 @@ http_stream_add_file(struct http_stream *stream, int fd, size_t file_sz,
 void
 http_stream_add_partial_file(struct http_stream *stream,
                              int fd, size_t file_sz, const char *path,
-                             const struct http_ranges *ranges) {
+                             const struct http_ranges *ranges,
+                             char **mime_part_headers, size_t nb_mime_parts,
+                             char *mime_footer) {
     struct http_stream_file *file;
 
     file = http_stream_file_new(fd, file_sz, path);
     file->ranges = *ranges;
+
+    file->mime_part_headers = mime_part_headers;
+    file->nb_mime_parts = nb_mime_parts;
+    file->mime_footer = mime_footer;
 
     http_stream_add_entry(stream, (intptr_t)file, &http_stream_file_functions);
 }
@@ -310,6 +321,30 @@ http_stream_file_new(int fd, size_t file_sz, const char *path) {
     return file;
 }
 
+static void
+http_stream_file_delete(intptr_t arg) {
+    struct http_stream_file *file;
+
+    file = (struct http_stream_file *)arg;
+    if (!file)
+        return;
+
+    http_free(file->path);
+    if (file->fd >= 0)
+        close(file->fd);
+    bf_buffer_delete(file->buf);
+
+    http_ranges_free(&file->ranges);
+
+    for (size_t i = 0; i < file->nb_mime_parts; i++)
+        http_free(file->mime_part_headers[i]);
+    http_free(file->mime_part_headers);
+    http_free(file->mime_footer);
+
+    memset(file, 0, sizeof(struct http_stream_file));
+    http_free(file);
+}
+
 static int
 http_stream_file_write(intptr_t arg, int fd, size_t *psz) {
     struct http_stream_file *file;
@@ -324,8 +359,7 @@ http_stream_file_write(intptr_t arg, int fd, size_t *psz) {
 
         range = file->ranges.ranges + file->range_idx;
         range_sz = range->last - range->first + 1;
-        //read_sz = MIN(range_sz - file->range_read_sz, (size_t)BUFSIZ);
-        read_sz = MIN(range_sz - file->range_read_sz, (size_t)50);
+        read_sz = MIN(range_sz - file->range_read_sz, (size_t)BUFSIZ);
 
         /* If we are just starting to read the current range, we need to move
          * to the right offset */
@@ -334,6 +368,14 @@ http_stream_file_write(intptr_t arg, int fd, size_t *psz) {
                 http_set_error("cannot seek %s: %s",
                                file->path, strerror(errno));
                 return -1;
+            }
+
+            /* Write the MIME header for this part if necessary */
+            if (file->nb_mime_parts > 0) {
+                char *header;
+
+                header = file->mime_part_headers[file->range_idx];
+                bf_buffer_add_string(file->buf, header);
             }
         }
 
@@ -357,6 +399,9 @@ http_stream_file_write(intptr_t arg, int fd, size_t *psz) {
             /* We entirely read the current range */
             if (file->range_idx == file->ranges.nb_ranges - 1) {
                 /* We read all ranges */
+                if (file->nb_mime_parts > 0)
+                    bf_buffer_add_string(file->buf, file->mime_footer);
+
                 file->done_reading = true;
                 close(file->fd);
                 file->fd = -1;
@@ -382,23 +427,4 @@ http_stream_file_write(intptr_t arg, int fd, size_t *psz) {
 
     *psz = (size_t)ret;
     return 1;
-}
-
-static void
-http_stream_file_delete(intptr_t arg) {
-    struct http_stream_file *file;
-
-    file = (struct http_stream_file *)arg;
-    if (!file)
-        return;
-
-    http_free(file->path);
-    if (file->fd >= 0)
-        close(file->fd);
-    bf_buffer_delete(file->buf);
-
-    http_ranges_free(&file->ranges);
-
-    memset(file, 0, sizeof(struct http_stream_file));
-    http_free(file);
 }

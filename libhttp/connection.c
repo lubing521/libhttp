@@ -692,12 +692,60 @@ http_connection_write_headers_and_file(struct http_connection *connection,
                                        struct http_headers *headers,
                                        const char *path, int fd, size_t file_sz,
                                        const struct http_ranges *ranges) {
+    char **mime_part_headers;
+    size_t nb_mime_parts;
+    char *mime_footer;
     size_t content_length;
 
-    if (ranges) {
+    if (ranges && ranges->nb_ranges > 1) {
+        char boundary[HTTP_MIME_BOUNDARY_SZ];
+        const char *content_type;
+        int ret;
+
+        /* Generate a MIME document of type multipart/byteranges. */
+
         content_length = http_ranges_length(ranges);
+
+        /* Extract the content type to include it in MIME headers */
+        content_type = http_headers_get_header(headers, "Content-Type");
+        if (!content_type)
+            content_type = "application/octet-stream";
+
+        /* Generate MIME headers and footer using a random boundary */
+        http_mime_generate_boundary(boundary, HTTP_MIME_BOUNDARY_SZ);
+
+        nb_mime_parts = ranges->nb_ranges;
+        mime_part_headers = http_calloc(nb_mime_parts, sizeof(char *));
+
+        for (size_t i = 0; i < nb_mime_parts; i++) {
+            struct http_range *range;
+
+            range = ranges->ranges + i;
+
+            ret = http_asprintf(&mime_part_headers[i],
+                                "\r\n--%s\r\n"
+                                "Content-Type: %s\r\n"
+                                "Content-Range: %zu-%zu/%zu\r\n\r\n",
+                                boundary, content_type,
+                                range->first, range->last, file_sz);
+
+            content_length += (size_t)ret;
+        }
+
+        ret = http_asprintf(&mime_footer, "\r\n--%s--\r\n", boundary);
+        content_length += (size_t)ret;
+
+        /* We do not need to quote/escape boundary because we use base64 to
+         * make sure we only have token characters */
+        http_headers_format_header(headers, "Content-Type",
+                                   "multipart/byteranges; boundary=%s",
+                                   boundary);
     } else {
         content_length = file_sz;
+
+        nb_mime_parts = 0;
+        mime_part_headers = NULL;
+        mime_footer = NULL;
     }
 
     http_headers_format_header(headers, "Content-Length",
@@ -708,7 +756,8 @@ http_connection_write_headers_and_file(struct http_connection *connection,
 
     if (ranges) {
         http_stream_add_partial_file(connection->wstream, fd, file_sz, path,
-                                     ranges);
+                                     ranges, mime_part_headers, nb_mime_parts,
+                                     mime_footer);
     } else {
         http_stream_add_file(connection->wstream, fd, file_sz, path);
     }

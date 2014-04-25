@@ -202,6 +202,7 @@ const char *http_header_value(const struct http_header *);
 struct http_headers *http_headers_new(void);
 void http_headers_delete(struct http_headers *);
 
+const char *http_headers_get_header(struct http_headers *, const char *);
 void http_headers_add_header(struct http_headers *, const char *, const char *);
 void http_headers_set_header(struct http_headers *, const char *, const char *);
 void http_headers_format_header(struct http_headers *, const char *,
@@ -425,5 +426,9 @@ const char *http_media_type_get_parameter(const struct http_media_type *,
                                           const char *);
 
 char *http_mime_q_encode(const char *);
+
+#define HTTP_MIME_BOUNDARY_SZ (32 + 1)
+
+void http_mime_generate_boundary(char [static HTTP_MIME_BOUNDARY_SZ], size_t);
 
 #endif
