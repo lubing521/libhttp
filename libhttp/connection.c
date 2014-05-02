@@ -389,6 +389,8 @@ http_connection_send_error(struct http_connection *connection,
     va_list ap;
     int ret;
 
+    assert(connection->type == HTTP_CONNECTION_SERVER);
+
     cfg = http_connection_get_cfg(connection);
 
     if (fmt) {
@@ -499,8 +501,10 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         if (parser->state == HTTP_PARSER_ERROR) {
             http_connection_error(connection, "cannot parse message: %s",
                                   parser->errmsg);
-            http_connection_send_error(connection, parser->status_code,
-                                       "%s", parser->errmsg);
+            if (connection->type == HTTP_CONNECTION_SERVER) {
+                http_connection_send_error(connection, parser->status_code,
+                                           "%s", parser->errmsg);
+            }
             goto error;
         } else if (parser->state == HTTP_PARSER_DONE) {
             msg->is_complete = true;
