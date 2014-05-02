@@ -672,6 +672,8 @@ http_connection_write_headers_and_body(struct http_connection *connection,
 
     if (body) {
         http_headers_format_header(headers, "Content-Length", "%zu", bodysz);
+    } else {
+        http_headers_set_header(headers, "Content-Length", "0");
     }
 
     http_connection_write_headers(connection, headers);
