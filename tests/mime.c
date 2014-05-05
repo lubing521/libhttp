@@ -158,7 +158,7 @@ int
 main(int argc, char **argv) {
     struct test_suite *suite;
 
-    suite = test_suite_new("ranges");
+    suite = test_suite_new("mime");
     test_suite_initialize_from_args(suite, argc, argv);
 
     test_suite_start(suite);
