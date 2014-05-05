@@ -19,14 +19,13 @@
 
 #include "tests.h"
 
-int
-main(int argc, char **argv) {
+TEST(base) {
 #define HTTPT_CONTENT_DISPOSITION_IS(filename_, header_)                \
     do {                                                                \
         char *header;                                                   \
                                                                         \
         header = http_format_content_disposition_attachment(filename_); \
-        HTTPT_IS_EQUAL_STRING(header, header_);                         \
+        TEST_STRING_EQ(header, header_);                                \
         http_free(header);                                              \
     } while (0)
 
@@ -38,8 +37,18 @@ main(int argc, char **argv) {
                                  "attachment; filename=\"\\\"foo.png\\\"\"");
     HTTPT_CONTENT_DISPOSITION_IS("foo\\bar",
                                  "attachment; filename=\"foo\\\\bar\"");
+}
 
-#undef HTTPT_CONTENT_DISPOSITION_IS
+int
+main(int argc, char **argv) {
+    struct test_suite *suite;
 
-    return 0;
+    suite = test_suite_new("content-disposition");
+    test_suite_initialize_from_args(suite, argc, argv);
+
+    test_suite_start(suite);
+
+    TEST_RUN(suite, base);
+
+    test_suite_print_results_and_exit(suite);
 }
