@@ -866,149 +866,6 @@ http_request_process_uri(struct http_msg *msg) {
 }
 
 int
-http_token_list_get_next_token(const char *list, char *token, size_t sz,
-                               const char **pend) {
-    const char *ptr, *token_start, *token_end, *end;
-    size_t toklen;
-
-    ptr = list;
-
-#define HTTP_SKIP_SP_HT()                 \
-    while (*ptr == ' ' || *ptr == '\t') { \
-        ptr++;                            \
-    }
-
-    for (;;) {
-        if (*ptr == '\0') {
-            /* End of list */
-            return 0;
-        } else if (*ptr == ' ' || *ptr == '\t' || *ptr == ',') {
-            ptr++;
-        } else if (!http_is_token_char((unsigned char)*ptr)) {
-            http_set_error("invalid character \\%hhu in token list",
-                           (unsigned char)*ptr);
-            return -1;
-        } else {
-            /* Start of token */
-            token_start = ptr;
-            break;
-        }
-    }
-
-    /* Token */
-    for (;;) {
-        if (*ptr == '\0' || *ptr == ' ' || *ptr == '\t' || *ptr == ','
-         || *ptr == ';') {
-            /* End of token */
-            token_end = ptr;
-            break;
-        } else if (!http_is_token_char((unsigned char)*ptr)) {
-            http_set_error("invalid character \\%hhu in token",
-                           (unsigned char)*ptr);
-            return -1;
-        } else {
-            ptr++;
-        }
-    }
-
-    for (;;) {
-        HTTP_SKIP_SP_HT();
-
-        if (*ptr == ';') {
-            /* Token parameter */
-
-            ptr++; /* skip ';' */
-            HTTP_SKIP_SP_HT();
-
-            /* Name */
-            for (;;) {
-                if (*ptr == '\0') {
-                    http_set_error("missing parameter value");
-                    return -1;
-                } else if (*ptr == ' ' || *ptr == '\t' || *ptr == '=') {
-                    /* End of parameter name */
-                    break;
-                } else if (!http_is_token_char((unsigned char)*ptr)) {
-                    http_set_error("invalid character \\%hhu in parameter name",
-                                   (unsigned char)*ptr);
-                    return -1;
-                } else {
-                    ptr++;
-                }
-            }
-
-            HTTP_SKIP_SP_HT();
-
-            if (*ptr != '=') {
-                http_set_error("missing parameter value");
-                return -1;
-            }
-
-            ptr++; /* skip '=' */
-
-            /* Value */
-            if (*ptr == '"') {
-                /* Quoted string */
-                ptr++; /* skip '"' */
-
-                for (;;) {
-                    if (*ptr == '\0') {
-                        http_set_error("truncated quoted string");
-                    } else if (*ptr == '"' && *(ptr - 1) != '\\') {
-                        /* End of parameter value */
-                        break;
-                    } else {
-                        ptr++;
-                    }
-                }
-
-                ptr++; /* skip '"' */
-            } else {
-                /* Token */
-                for (;;) {
-                    if (*ptr == '\0' || *ptr == ' ' || *ptr == '\t'
-                     || *ptr == ',' || *ptr == ';') {
-                        /* End of parameter value */
-                        break;
-                    } else if (!http_is_token_char((unsigned char)*ptr)) {
-                        http_set_error("invalid character \\%hhu in parameter "
-                                       "value", (unsigned char)*ptr);
-                        return -1;
-                    } else {
-                        ptr++;
-                    }
-                }
-            }
-        } else {
-            break;
-        }
-    }
-
-    HTTP_SKIP_SP_HT();
-
-    if (*ptr == ',') {
-        ptr++; /* skip ',' */
-        end = ptr;
-    } else if (*ptr == '\0') {
-        end = ptr;
-    } else {
-        http_set_error("missing separator");
-        return -1;
-    }
-#undef HTTP_SKIP_SP_HT
-
-    toklen = (size_t)(token_end - token_start);
-    if (toklen > sz)
-        toklen = sz - 1;
-
-    memcpy(token, token_start, toklen);
-    token[toklen] = '\0';
-
-    *pend = end;
-    return 1;
-}
-
-int
 http_parser_init(struct http_parser *parser, enum http_msg_type msg_type,
                  const struct http_cfg *cfg) {
     memset(parser, 0, sizeof(struct http_parser));
@@ -1798,28 +1655,26 @@ http_msg_process_headers(struct http_parser *parser) {
                 }
             }
         } else if (HTTP_HEADER_IS("Connection")) {
-            const char *list, *end;
-            char token[32];
+            struct http_pvalues pvalues;
 
-            list = header->value;
-            for (;;) {
-                int ret;
+            if (http_pvalues_parse(&pvalues, header->value) == -1) {
+                HTTP_ERROR(HTTP_BAD_REQUEST,
+                           "invalid Connection header: %s", http_get_error());
+            }
 
-                ret = http_token_list_get_next_token(list, token, sizeof(token),
-                                                     &end);
-                if (ret == -1)
-                    goto ignore_header;
-                if (ret == 0)
-                    break;
+            for (size_t i = 0; i < pvalues.nb_pvalues; i++) {
+                struct http_pvalue *pvalue;
 
-                if (strcasecmp(token, "keep-alive") == 0) {
+                pvalue = pvalues.pvalues + i;
+
+                if (strcasecmp(pvalue->value, "keep-alive") == 0) {
                     msg->connection_options |= HTTP_CONNECTION_KEEP_ALIVE;
-                } else if (strcasecmp(token, "close") == 0) {
+                } else if (strcasecmp(pvalue->value, "close") == 0) {
                     msg->connection_options |= HTTP_CONNECTION_CLOSE;
                 }
-
-                list = end;
             }
+
+            http_pvalues_free(&pvalues);
         } else if (HTTP_HEADER_IS("Content-Length")) {
             if (has_transfer_encoding) {
                 /* RFC 2616 4.3: If a message is received with both a
@@ -1842,25 +1697,23 @@ http_msg_process_headers(struct http_parser *parser) {
                            http_get_error());
             }
         } else if (HTTP_HEADER_IS("Transfer-Encoding")) {
-            const char *list, *end;
-            char token[32];
+            struct http_pvalues pvalues;
             bool is_chunked;
 
-            is_chunked = false;
+            if (http_pvalues_parse(&pvalues, header->value) == -1) {
+                HTTP_ERROR(HTTP_BAD_REQUEST,
+                           "invalid Transfer-Encoding header: %s",
+                           http_get_error());
+            }
 
-            list = header->value;
-            for (;;) {
-                int ret;
+            for (size_t i = 0; i < pvalues.nb_pvalues; i++) {
+                struct http_pvalue *pvalue;
 
-                ret = http_token_list_get_next_token(list, token, sizeof(token),
-                                                     &end);
-                if (ret == -1)
-                    goto ignore_header;
-                if (ret == 0)
-                    break;
+                pvalue = pvalues.pvalues + i;
 
-                if (strcasecmp(token, "chunked") == 0) {
+                if (strcasecmp(pvalue->value, "chunked") == 0) {
                     if (is_chunked) {
+                        http_pvalues_free(&pvalues);
                         HTTP_ERROR(HTTP_BAD_REQUEST,
                                    "duplicate 'chunked' token in "
                                    "Transfer-Encoding header");
@@ -1869,39 +1722,39 @@ http_msg_process_headers(struct http_parser *parser) {
                     has_transfer_encoding = true;
                     is_chunked = true;
                     msg->is_body_chunked = true;
-                } else if (strcasecmp(token, "identity") == 0) {
+                } else if (strcasecmp(pvalue->value, "identity") == 0) {
                     /* Default transfer encoding */
                 } else {
+                    http_pvalues_free(&pvalues);
                     HTTP_ERROR(HTTP_NOT_IMPLEMENTED,
-                               "unknown transfer encoding '%s'", token);
+                               "unknown transfer encoding");
                 }
-
-                list = end;
             }
+
+            http_pvalues_free(&pvalues);
         } else if (msg->type == HTTP_MSG_REQUEST && HTTP_HEADER_IS("Expect")) {
-            const char *list, *end;
-            char token[32];
+            struct http_pvalues pvalues;
 
-            list = header->value;
-            for (;;) {
-                int ret;
-
-                ret = http_token_list_get_next_token(list, token, sizeof(token),
-                                                     &end);
-                if (ret == -1)
-                    goto ignore_header;
-                if (ret == 0)
-                    break;
-
-                if (strcasecmp(token, "100-continue") == 0) {
-                    msg->u.request.expects_100_continue = true;
-                } else {
-                    HTTP_ERROR(HTTP_EXPECTATION_FAILED,
-                               "unknown expectation token");
-                }
-
-                list = end;
+            if (http_pvalues_parse(&pvalues, header->value) == -1) {
+                HTTP_ERROR(HTTP_BAD_REQUEST,
+                           "invalid Expect header: %s", http_get_error());
             }
+
+            for (size_t i = 0; i < pvalues.nb_pvalues; i++) {
+                struct http_pvalue *pvalue;
+
+                pvalue = pvalues.pvalues + i;
+
+                if (strcasecmp(pvalue->value, "100-continue") == 0) {
+                    msg->u.request.expects_100_continue = true;
+                } else if (strcasecmp(pvalue->value, "close") == 0) {
+                    http_pvalues_free(&pvalues);
+                    HTTP_ERROR(HTTP_EXPECTATION_FAILED,
+                               "unknown expectation value");
+                }
+            }
+
+            http_pvalues_free(&pvalues);
         } else if (msg->type == HTTP_MSG_REQUEST && HTTP_HEADER_IS("Range")) {
             msg->u.request.has_ranges = true;
 

@@ -51,7 +51,8 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
     /* Value */
     start = ptr;
     for (;;) {
-        if (*ptr == ' ' || *ptr == '\t' || *ptr == ';' || *ptr == '\0') {
+        if (*ptr == ' ' || *ptr == '\t' || *ptr == ';' || *ptr == ','
+         || *ptr == '\0') {
             toklen = (size_t)(ptr - start);
             if (toklen == 0) {
                 http_set_error("empty value");
@@ -61,8 +62,7 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
             pvalue->value = http_strndup(start, toklen);
             break;
         } else if (!http_is_pvalue_char((unsigned char)*ptr)) {
-            http_set_error("invalid character \\%hhu in value",
-                           (unsigned char)*ptr);
+            http_set_error_invalid_character((unsigned char)*ptr, " in value");
             goto error;
         } else {
             ptr++;
@@ -107,8 +107,8 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
 
                 break;
             } else if (!http_is_pvalue_char((unsigned char)*ptr)) {
-                http_set_error("invalid character \\%hhu in parameter name",
-                               (unsigned char)*ptr);
+                http_set_error_invalid_character((unsigned char)*ptr,
+                                                 " in parameter name");
                 http_pvalue_parameter_free(&parameter);
                 goto error;
             } else {
@@ -159,9 +159,8 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
                         http_pvalue_parameter_free(&parameter);
                         goto error;
                     } else {
-                        http_set_error("invalid escaped character \\%hhu "
-                                       "in parameter value",
-                                       (unsigned char)*ptr);
+                        http_set_error_invalid_character((unsigned char)*ptr,
+                                                         " in parameter value");
                         http_pvalue_parameter_free(&parameter);
                         goto error;
                     }
@@ -181,7 +180,7 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
             /* Token */
             start = ptr;
             for (;;) {
-                if (*ptr == ';' || *ptr == ' ' || *ptr == '\0') {
+                if (*ptr == ';' || *ptr == ' ' || *ptr == '\t' || *ptr == '\0') {
                     toklen = (size_t)(ptr - start);
                     if (toklen == 0) {
                         http_set_error("empty parameter value");
@@ -192,8 +191,8 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
                     parameter.value = http_strndup(start, toklen);
                     break;
                 } else if (!http_is_pvalue_char((unsigned char)*ptr)) {
-                    http_set_error("invalid character \\%hhu in parameter "
-                                   "value", (unsigned char)*ptr);
+                    http_set_error_invalid_character((unsigned char)*ptr,
+                                                     " in parameter");
                     http_pvalue_parameter_free(&parameter);
                     goto error;
                 } else {
@@ -209,9 +208,11 @@ http_pvalue_parse(struct http_pvalue *pvalue, const char *string,
 
         if (*ptr == '\0') {
             break;
+        } else if (*ptr == ',') {
+            break;
         } else if (*ptr != ';') {
-            http_set_error("invalid character \\%hhu after parameter value",
-                           (unsigned char)*ptr);
+            http_set_error_invalid_character((unsigned char)*ptr,
+                                             " after parameter value");
             goto error;
         }
 
@@ -276,6 +277,75 @@ http_pvalue_get_parameter(const struct http_pvalue *pvalue, const char *name) {
     }
 
     return NULL;
+}
+
+int
+http_pvalues_parse(struct http_pvalues *pvalues, const char *str) {
+    const char *ptr;
+
+    memset(pvalues, 0, sizeof(struct http_pvalues));
+
+    ptr = str;
+    while (*ptr != '\0') {
+        struct http_pvalue pvalue;
+        const char *end;
+
+        if (http_pvalue_parse(&pvalue, ptr, &end) == -1)
+            goto error;
+
+        http_pvalues_add_pvalue(pvalues, &pvalue);
+        ptr = end;
+
+        while (*ptr == ' ' || *ptr == '\t')
+            ptr++;
+
+        if (*ptr == '\0') {
+            break;
+        } else if (*ptr == ',') {
+            ptr++; /* skip ',' */
+        }
+
+        while (*ptr == ' ' || *ptr == '\t')
+            ptr++;
+
+        if (*ptr == '\0') {
+            http_set_error("truncated value list");
+            goto error;
+        }
+    }
+
+    return 0;
+
+error:
+    http_pvalues_free(pvalues);
+    return -1;
+}
+
+void
+http_pvalues_free(struct http_pvalues *pvalues) {
+    if (!pvalues)
+        return;
+
+    for (size_t i = 0; i < pvalues->nb_pvalues; i++)
+        http_pvalue_free(pvalues->pvalues + i);
+    http_free(pvalues->pvalues);
+
+    memset(pvalues, 0, sizeof(struct http_pvalues));
+}
+
+void
+http_pvalues_add_pvalue(struct http_pvalues *pvalues,
+                        const struct http_pvalue *pvalue) {
+    if (pvalues->nb_pvalues == 0) {
+        pvalues->pvalues = http_malloc(sizeof(struct http_pvalue));
+    } else {
+        size_t nsz;
+
+        nsz = (pvalues->nb_pvalues + 1) * sizeof(struct http_pvalue);
+        pvalues->pvalues = http_realloc(pvalues->pvalues, nsz);
+    }
+
+    pvalues->pvalues[pvalues->nb_pvalues++] = *pvalue;
 }
 
 static bool

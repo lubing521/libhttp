@@ -47,7 +47,7 @@ TEST(base) {
     TEST_STRING_EQ(pvalue.value, "foo");
     HTTPT_END();
 
-    HTTPT_BEGIN("foo;a=1; b=2  ;c=3   ;  d=4");
+    HTTPT_BEGIN("foo;a=1; b=2\t  ;c=3   ;  d=4");
     TEST_STRING_EQ(pvalue.value, "foo");
     HTTPT_PVALUE_PARAMETER_IS("a", "1");
     HTTPT_PVALUE_PARAMETER_IS("b", "2");
@@ -75,7 +75,7 @@ TEST(invalid) {
     /* Invalid value */
     HTTPT_INVALID_PVALUE("");
     HTTPT_INVALID_PVALUE("?");
-    HTTPT_INVALID_PVALUE("foo,");
+    HTTPT_INVALID_PVALUE("foo?");
 
     /* Invalid parameters */
     HTTPT_INVALID_PVALUE("foo;");
@@ -92,6 +92,66 @@ TEST(invalid) {
     HTTPT_INVALID_PVALUE("foo; a=\"foo\";");
 }
 
+TEST(list) {
+    struct http_pvalues pvalues;
+
+#define HTTPT_BEGIN_LIST(str_)                                            \
+    do {                                                                  \
+        if (http_pvalues_parse(&pvalues, str_) == -1)                     \
+            TEST_ABORT("cannot parse pvalue list: %s", http_get_error()); \
+    } while (0)
+
+#define HTTPT_END_LIST(str_)         \
+    do {                             \
+        http_pvalues_free(&pvalues); \
+    } while (0)
+
+#define HTTPT_LIST_PVALUE_PARAMETER_IS(i, name_, value_)                      \
+    do {                                                                      \
+        TEST_TRUE(http_pvalue_has_parameter(&pvalues.pvalues[i], name_));     \
+        TEST_STRING_EQ(http_pvalue_get_parameter(&pvalues.pvalues[i], name_), \
+                       value_);                                               \
+    } while (0)
+
+    HTTPT_BEGIN_LIST("a,b,c");
+    TEST_STRING_EQ(pvalues.pvalues[0].value, "a");
+    TEST_STRING_EQ(pvalues.pvalues[1].value, "b");
+    TEST_STRING_EQ(pvalues.pvalues[2].value, "c");
+    HTTPT_END_LIST();
+
+    HTTPT_BEGIN_LIST("a ,\tb\t,  c");
+    TEST_STRING_EQ(pvalues.pvalues[0].value, "a");
+    TEST_STRING_EQ(pvalues.pvalues[1].value, "b");
+    TEST_STRING_EQ(pvalues.pvalues[2].value, "c");
+    HTTPT_END_LIST();
+
+    HTTPT_BEGIN_LIST("a ;a=1 ,\tb ;b1=\"foo,bar\"; b2=2\t,  c; c=3");
+    TEST_STRING_EQ(pvalues.pvalues[0].value, "a");
+    HTTPT_LIST_PVALUE_PARAMETER_IS(0, "a", "1");
+    TEST_STRING_EQ(pvalues.pvalues[1].value, "b");
+    HTTPT_LIST_PVALUE_PARAMETER_IS(1, "b1", "foo,bar");
+    HTTPT_LIST_PVALUE_PARAMETER_IS(1, "b2", "2");
+    TEST_STRING_EQ(pvalues.pvalues[2].value, "c");
+    HTTPT_LIST_PVALUE_PARAMETER_IS(2, "c", "3");
+    HTTPT_END_LIST();
+}
+
+TEST(invalid_list) {
+#define HTTPT_INVALID_PVALUES(str_)                   \
+    do {                                              \
+        struct http_pvalues pvalues;                  \
+                                                      \
+        if (http_pvalues_parse(&pvalues, str_) == 0)  \
+            TEST_ABORT("parsed invalid pvalue list"); \
+    } while (0)
+
+    HTTPT_INVALID_PVALUES(",foo");
+    HTTPT_INVALID_PVALUES(" , foo");
+    HTTPT_INVALID_PVALUES("foo,");
+    HTTPT_INVALID_PVALUES("foo, ");
+    HTTPT_INVALID_PVALUES("foo,,bar");
+    HTTPT_INVALID_PVALUES("foo, ,bar");
+}
 
 int
 main(int argc, char **argv) {
@@ -104,6 +164,8 @@ main(int argc, char **argv) {
 
     TEST_RUN(suite, base);
     TEST_RUN(suite, invalid);
+    TEST_RUN(suite, list);
+    TEST_RUN(suite, invalid_list);
 
     test_suite_print_results_and_exit(suite);
 }

@@ -230,7 +230,15 @@ void http_pvalue_add_parameter(struct http_pvalue *,
 bool http_pvalue_has_parameter(const struct http_pvalue *, const char *);
 const char *http_pvalue_get_parameter(const struct http_pvalue *, const char *);
 
-int http_token_list_get_next_token(const char *, char *, size_t, const char **);
+struct http_pvalues {
+    struct http_pvalue *pvalues;
+    size_t nb_pvalues;
+};
+
+int http_pvalues_parse(struct http_pvalues *, const char *);
+void http_pvalues_free(struct http_pvalues *);
+
+void http_pvalues_add_pvalue(struct http_pvalues *, const struct http_pvalue *);
 
 /* Parser */
 enum http_parser_state {
