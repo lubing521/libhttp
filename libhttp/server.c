@@ -108,7 +108,7 @@ http_server_new(struct http_cfg *cfg, struct event_base *ev_base) {
 
     freeaddrinfo(res);
 
-    if (ht_table_get_nb_entries(server->listeners) == 0) {
+    if (ht_table_nb_entries(server->listeners) == 0) {
         http_set_error("cannot listen on any address");
         goto error;
     }
@@ -154,7 +154,7 @@ http_server_delete(struct http_server *server) {
     if (it) {
         struct http_connection *connection;
 
-        while (ht_table_iterator_get_next(it, NULL, (void **)&connection) == 1)
+        while (ht_table_iterator_next(it, NULL, (void **)&connection) == 1)
             http_connection_delete(connection);
         ht_table_delete(server->connections);
 
@@ -165,7 +165,7 @@ http_server_delete(struct http_server *server) {
     if (it) {
         struct http_listener *listener;
 
-        while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1)
+        while (ht_table_iterator_next(it, NULL, (void **)&listener) == 1)
             http_listener_delete(listener);
         ht_table_delete(server->listeners);
 
@@ -273,7 +273,7 @@ http_server_does_listen_on(const struct http_server *server,
     }
 
     found = false;
-    while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1) {
+    while (ht_table_iterator_next(it, NULL, (void **)&listener) == 1) {
         if ((strcmp(host, listener->host) == 0
              || strcmp(host, listener->numeric_host) == 0)
             && (!port || (strcmp(port, listener->port) == 0))) {
@@ -301,7 +301,7 @@ http_server_does_listen_on_host_string(const struct http_server *server,
     }
 
     found = false;
-    while (ht_table_iterator_get_next(it, NULL, (void **)&listener) == 1) {
+    while (ht_table_iterator_next(it, NULL, (void **)&listener) == 1) {
         if (strcmp(host_string, listener->host) == 0
          || strcmp(host_string, listener->numeric_host) == 0
          || strcmp(host_string, listener->host_port) == 0
@@ -338,7 +338,7 @@ http_server_on_timeout_timer(evutil_socket_t fd, short events, void *arg) {
     if (it) {
         struct http_connection *connection;
 
-        while (ht_table_iterator_get_next(it, NULL, (void **)&connection) == 1)
+        while (ht_table_iterator_next(it, NULL, (void **)&connection) == 1)
             http_connection_check_for_timeout(connection, now);
 
         ht_table_iterator_delete(it);
