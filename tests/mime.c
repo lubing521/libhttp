@@ -19,21 +19,14 @@
 
 #include "tests.h"
 
-int
-main(int argc, char **argv) {
+TEST(media_types) {
     struct http_media_type *media_type;
 
-    /* --------------------------------------------------------------------
-     *  Media types
-     * -------------------------------------------------------------------- */
-
-#define HTTPT_BEGIN(str_)                                       \
-    do {                                                        \
-        media_type = http_media_type_new(str_);                 \
-        if (!media_type) {                                      \
-            HTTPT_DIE("%s:%d: cannot parse media type: %s",     \
-                      __FILE__, __LINE__, http_get_error());    \
-        }                                                       \
+#define HTTPT_BEGIN(str_)                                                \
+    do {                                                                 \
+        media_type = http_media_type_new(str_);                          \
+        if (!media_type)                                                 \
+            TEST_ABORT("cannot parse media type: %s", http_get_error()); \
     } while (0)
 
 #define HTTPT_END(str_)                     \
@@ -43,54 +36,54 @@ main(int argc, char **argv) {
 
 #define HTTPT_MEDIA_TYPE_PARAMETER_IS(name_, value_)                            \
     do {                                                                        \
-        HTTPT_IS_TRUE(http_media_type_has_parameter(media_type, name_));        \
-        HTTPT_IS_EQUAL_STRING(http_media_type_get_parameter(media_type, name_), \
+        TEST_TRUE(http_media_type_has_parameter(media_type, name_));        \
+        TEST_STRING_EQ(http_media_type_get_parameter(media_type, name_), \
                               value_);                                          \
     } while (0)
 
     HTTPT_BEGIN("text/plain");
-    HTTPT_IS_EQUAL_STRING(http_media_type_string(media_type), "text/plain");
-    HTTPT_IS_EQUAL_STRING(http_media_type_base_string(media_type),
+    TEST_STRING_EQ(http_media_type_string(media_type), "text/plain");
+    TEST_STRING_EQ(http_media_type_base_string(media_type),
                           "text/plain");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_type(media_type), "text");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_subtype(media_type), "plain");
+    TEST_STRING_EQ(http_media_type_get_type(media_type), "text");
+    TEST_STRING_EQ(http_media_type_get_subtype(media_type), "plain");
     HTTPT_END();
 
     HTTPT_BEGIN("Text/PLAIn");
-    HTTPT_IS_EQUAL_STRING(http_media_type_string(media_type), "text/plain");
-    HTTPT_IS_EQUAL_STRING(http_media_type_base_string(media_type),
+    TEST_STRING_EQ(http_media_type_string(media_type), "text/plain");
+    TEST_STRING_EQ(http_media_type_base_string(media_type),
                           "text/plain");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_type(media_type), "text");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_subtype(media_type), "plain");
+    TEST_STRING_EQ(http_media_type_get_type(media_type), "text");
+    TEST_STRING_EQ(http_media_type_get_subtype(media_type), "plain");
     HTTPT_END();
 
     HTTPT_BEGIN("text/plain; charset=UTF-8");
-    HTTPT_IS_EQUAL_STRING(http_media_type_string(media_type),
+    TEST_STRING_EQ(http_media_type_string(media_type),
                           "text/plain; charset=UTF-8");
-    HTTPT_IS_EQUAL_STRING(http_media_type_base_string(media_type),
+    TEST_STRING_EQ(http_media_type_base_string(media_type),
                           "text/plain");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_type(media_type), "text");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_subtype(media_type), "plain");
+    TEST_STRING_EQ(http_media_type_get_type(media_type), "text");
+    TEST_STRING_EQ(http_media_type_get_subtype(media_type), "plain");
     HTTPT_MEDIA_TYPE_PARAMETER_IS("charset", "UTF-8");
     HTTPT_END();
 
     HTTPT_BEGIN("text/plain ;CHarsET=UTF-8");
-    HTTPT_IS_EQUAL_STRING(http_media_type_string(media_type),
+    TEST_STRING_EQ(http_media_type_string(media_type),
                           "text/plain; charset=UTF-8");
-    HTTPT_IS_EQUAL_STRING(http_media_type_base_string(media_type),
+    TEST_STRING_EQ(http_media_type_base_string(media_type),
                           "text/plain");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_type(media_type), "text");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_subtype(media_type), "plain");
+    TEST_STRING_EQ(http_media_type_get_type(media_type), "text");
+    TEST_STRING_EQ(http_media_type_get_subtype(media_type), "plain");
     HTTPT_MEDIA_TYPE_PARAMETER_IS("charset", "UTF-8");
     HTTPT_END();
 
     HTTPT_BEGIN("text/plain;a=1; b=2  ;c=3   ;  d=4");
-    HTTPT_IS_EQUAL_STRING(http_media_type_string(media_type),
+    TEST_STRING_EQ(http_media_type_string(media_type),
                           "text/plain; a=1; b=2; c=3; d=4");
-    HTTPT_IS_EQUAL_STRING(http_media_type_base_string(media_type),
+    TEST_STRING_EQ(http_media_type_base_string(media_type),
                           "text/plain");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_type(media_type), "text");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_subtype(media_type), "plain");
+    TEST_STRING_EQ(http_media_type_get_type(media_type), "text");
+    TEST_STRING_EQ(http_media_type_get_subtype(media_type), "plain");
     HTTPT_MEDIA_TYPE_PARAMETER_IS("a", "1");
     HTTPT_MEDIA_TYPE_PARAMETER_IS("b", "2");
     HTTPT_MEDIA_TYPE_PARAMETER_IS("c", "3");
@@ -98,24 +91,26 @@ main(int argc, char **argv) {
     HTTPT_END();
 
     HTTPT_BEGIN("text/plain; a=foo; b=\"foo\"; c=\"\\\"foo\\\"\"");
-    HTTPT_IS_EQUAL_STRING(http_media_type_string(media_type),
+    TEST_STRING_EQ(http_media_type_string(media_type),
                           "text/plain; a=foo; b=foo; c=\"\\\"foo\\\"\"");
-    HTTPT_IS_EQUAL_STRING(http_media_type_base_string(media_type),
+    TEST_STRING_EQ(http_media_type_base_string(media_type),
                           "text/plain");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_type(media_type), "text");
-    HTTPT_IS_EQUAL_STRING(http_media_type_get_subtype(media_type), "plain");
+    TEST_STRING_EQ(http_media_type_get_type(media_type), "text");
+    TEST_STRING_EQ(http_media_type_get_subtype(media_type), "plain");
     HTTPT_MEDIA_TYPE_PARAMETER_IS("a", "foo");
     HTTPT_MEDIA_TYPE_PARAMETER_IS("b", "foo");
     HTTPT_MEDIA_TYPE_PARAMETER_IS("c", "\"foo\"");
     HTTPT_END();
+}
 
+TEST(invalid_media_types) {
 #define HTTPT_INVALID_MEDIA_TYPE(str_)                    \
     do {                                                  \
+        struct http_media_type *media_type;               \
+                                                          \
         media_type = http_media_type_new(str_);           \
-        if (media_type) {                                 \
-            HTTPT_DIE("%s:%d: parsed invalid media type", \
-                      __FILE__, __LINE__);                \
-        }                                                 \
+        if (media_type)                                   \
+            TEST_ABORT("parsed invalid media type");      \
     } while (0)
 
     /* Invalid type */
@@ -141,22 +136,15 @@ main(int argc, char **argv) {
     HTTPT_INVALID_MEDIA_TYPE("text/plain; a=\"\\\"");
     HTTPT_INVALID_MEDIA_TYPE("text/plain; a=\"\\x\"");
     HTTPT_INVALID_MEDIA_TYPE("text/plain; a=\"foo\";");
+}
 
-#undef HTTPT_INVALID_MEDIA_TYPE
-
-#undef HTTPT_BEGIN
-#undef HTTPT_END
-#undef HTTPT_MEDIA_TYPE_PARAMETER_IS
-
-    /* --------------------------------------------------------------------
-     *  Q-encoding
-     * -------------------------------------------------------------------- */
+TEST(q_encoding) {
 #define HTTPT_QENCODING_IS(string_, encoded_string_)            \
     do {                                                        \
         char *encoded_string;                                   \
                                                                 \
         encoded_string = http_mime_q_encode(string_);           \
-        HTTPT_IS_EQUAL_STRING(encoded_string, encoded_string_); \
+        TEST_STRING_EQ(encoded_string, encoded_string_); \
     } while (0)
 
     HTTPT_QENCODING_IS("", "=?UTF-8?Q?" "?=");
@@ -164,9 +152,20 @@ main(int argc, char **argv) {
     HTTPT_QENCODING_IS("été", "=?UTF-8?Q?" "=C3=A9t=C3=A9" "?=");
     HTTPT_QENCODING_IS("foo bar\tbaz", "=?UTF-8?Q?" "foo=20bar=09baz" "?=");
     HTTPT_QENCODING_IS("=42??", "=?UTF-8?Q?" "=3D42=3F=3F" "?=");
-
-#undef HTTPT_QENCODING_IS
-
-    return 0;
 }
 
+int
+main(int argc, char **argv) {
+    struct test_suite *suite;
+
+    suite = test_suite_new("ranges");
+    test_suite_initialize_from_args(suite, argc, argv);
+
+    test_suite_start(suite);
+
+    TEST_RUN(suite, media_types);
+    TEST_RUN(suite, invalid_media_types);
+    TEST_RUN(suite, q_encoding);
+
+    test_suite_print_results_and_exit(suite);
+}
