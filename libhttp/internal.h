@@ -334,6 +334,25 @@ void http_connection_on_write_event(evutil_socket_t, short, void *);
 
 void http_connection_abort(struct http_connection *);
 
+int http_connection_write_request(struct http_connection *,
+                                  enum http_method, const struct http_uri *);
+int http_connection_write_response(struct http_connection *,
+                                   enum http_status_code, const char *);
+void http_connection_write_header(struct http_connection *,
+                                  const char *, const char *);
+void http_connection_write_headers(struct http_connection *,
+                                   struct http_headers *);
+void http_connection_write_header_size(struct http_connection *,
+                                       const char *, size_t);
+
+void http_connection_write_headers_and_body(struct http_connection *,
+                                            struct http_headers *,
+                                            const char *, size_t);
+void http_connection_write_headers_and_file(struct http_connection *,
+                                            struct http_headers *,
+                                            const char *, int, size_t,
+                                            const struct http_ranges *);
+
 /* Routes */
 enum http_route_match_result {
     HTTP_ROUTE_MATCH_OK,

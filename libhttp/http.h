@@ -391,25 +391,6 @@ int http_connection_send_error(struct http_connection *, enum http_status_code,
                                const char *, ...)
     __attribute__((format(printf, 3, 4)));
 
-int http_connection_write_request(struct http_connection *,
-                                  enum http_method, const struct http_uri *);
-int http_connection_write_response(struct http_connection *,
-                                   enum http_status_code, const char *);
-void http_connection_write_header(struct http_connection *,
-                                  const char *, const char *);
-void http_connection_write_headers(struct http_connection *,
-                                   struct http_headers *);
-void http_connection_write_header_size(struct http_connection *,
-                                       const char *, size_t);
-
-void http_connection_write_headers_and_body(struct http_connection *,
-                                            struct http_headers *,
-                                            const char *, size_t);
-void http_connection_write_headers_and_file(struct http_connection *,
-                                            struct http_headers *,
-                                            const char *, int, size_t,
-                                            const struct http_ranges *);
-
 /* MIME */
 struct http_media_type *http_media_type_new(const char *);
 void http_media_type_delete(struct http_media_type *);
