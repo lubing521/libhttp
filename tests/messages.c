@@ -21,48 +21,24 @@
 
 #include "tests.h"
 
-int
-main(int argc, char **argv) {
-    struct bf_buffer *buf;
-    struct http_cfg cfg;
-    struct http_parser parser;
-    struct http_msg *msg;
-    enum http_msg_type msg_type;
-    bool skip_header_processing;
-
-    http_cfg_init_server(&cfg);
-
-    cfg.u.server.max_request_uri_length = 8;
-
-    cfg.max_content_length = 48;
-    cfg.max_chunk_length = 16;
-
-    cfg.bufferize_body = true;
-
-    msg_type = HTTP_MSG_REQUEST;
-    skip_header_processing = false;
-
-#define HTTPT_BEGIN(str_)                                       \
-    do {                                                        \
-        int ret;                                                \
-                                                                \
-        buf = bf_buffer_new(0);                                 \
-        bf_buffer_add_string(buf, str_);                        \
-                                                                \
-        http_parser_init(&parser, msg_type, &cfg);              \
-        parser.skip_header_processing = skip_header_processing; \
-        msg = &parser.msg;                                      \
-                                                                \
-        ret = http_msg_parse(buf, &parser);                     \
-        if (ret == -1) {                                        \
-            HTTPT_DIE("%s:%d: cannot parse message: %s",        \
-                      __FILE__, __LINE__, http_get_error());    \
-        } else if (ret == 0) {                                  \
-            HTTPT_DIE("%s:%d: truncated message",               \
-                      __FILE__, __LINE__);                      \
-        }                                                       \
+#define HTTPT_BEGIN(str_, msg_type_, skip_header_processing_)         \
+    do {                                                              \
+        int ret;                                                      \
+                                                                      \
+        buf = bf_buffer_new(0);                                       \
+        bf_buffer_add_string(buf, str_);                              \
+                                                                      \
+        http_parser_init(&parser, msg_type_, &cfg);                   \
+        parser.skip_header_processing = skip_header_processing_;      \
+        msg = &parser.msg;                                            \
+                                                                      \
+        ret = http_msg_parse(buf, &parser);                           \
+        if (ret == -1) {                                              \
+            TEST_ABORT("cannot parse message: %s", http_get_error()); \
+        } else if (ret == 0) {                                        \
+            TEST_ABORT("truncated message");                          \
+        }                                                             \
     } while (0)
-
 
 #define HTTPT_END(str_)            \
     do {                           \
@@ -70,24 +46,31 @@ main(int argc, char **argv) {
         bf_buffer_delete(buf);     \
     } while (0)
 
-    /* --------------------------------------------------------------------
-     *  Request lines
-     * -------------------------------------------------------------------- */
-#define HTTPT_REQUEST_LINE(str_, method_, uri_, version_)       \
-    do {                                                        \
-        HTTPT_BEGIN(str_);                                      \
-        HTTPT_IS_EQUAL_INT(msg->u.request.method, method_);     \
-        HTTPT_IS_EQUAL_STRING(msg->u.request.uri_string, uri_); \
-        HTTPT_IS_EQUAL_INT(msg->version, version_);             \
-        HTTPT_END();                                            \
+TEST(request_lines) {
+    struct bf_buffer *buf;
+    struct http_cfg cfg;
+    struct http_parser parser;
+    struct http_msg *msg;
+
+#define HTTPT_REQUEST_LINE(str_, method_, uri_, version_) \
+    do {                                                  \
+        HTTPT_BEGIN(str_, HTTP_MSG_REQUEST, false);       \
+        TEST_INT_EQ(msg->u.request.method, method_);      \
+        TEST_STRING_EQ(msg->u.request.uri_string, uri_);  \
+        TEST_INT_EQ(msg->version, version_);              \
+        HTTPT_END();                                      \
     } while (0)
 
 #define HTTPT_INVALID_REQUEST_LINE(str_, status_code_)         \
     do {                                                       \
-        HTTPT_BEGIN(str_);                                     \
-        HTTPT_IS_EQUAL_INT(parser.status_code, status_code_);  \
+        HTTPT_BEGIN(str_, HTTP_MSG_REQUEST, false);            \
+        TEST_INT_EQ(parser.status_code, status_code_);         \
         HTTPT_END();                                           \
     } while (0)
+
+    http_cfg_init_server(&cfg);
+
+    cfg.u.server.max_request_uri_length = 8;
 
     HTTPT_REQUEST_LINE("GET / HTTP/1.0\r\n\r\n",
                        HTTP_GET, "/", HTTP_1_0);
@@ -119,19 +102,22 @@ main(int argc, char **argv) {
     HTTPT_INVALID_REQUEST_LINE("GET / HELLOWORD",
                                HTTP_HTTP_VERSION_NOT_SUPPORTED);
 
-#undef HTTPT_REQUEST_LINE
-#undef HTTPT_INVALID_REQUEST_LINE
+    http_cfg_free(&cfg);
+}
 
-    /* --------------------------------------------------------------------
-     *  Status lines
-     * -------------------------------------------------------------------- */
-#define HTTPT_STATUS_LINE(str_, status_code_, reason_phrase_, version_)       \
-    do {                                                                      \
-        HTTPT_BEGIN(str_);                                                    \
-        HTTPT_IS_EQUAL_INT(msg->u.response.status_code, status_code_);        \
-        HTTPT_IS_EQUAL_STRING(msg->u.response.reason_phrase, reason_phrase_); \
-        HTTPT_IS_EQUAL_INT(msg->version, version_);                           \
-        HTTPT_END();                                                          \
+TEST(status_lines) {
+    struct bf_buffer *buf;
+    struct http_cfg cfg;
+    struct http_parser parser;
+    struct http_msg *msg;
+
+#define HTTPT_STATUS_LINE(str_, status_code_, reason_phrase_, version_) \
+    do {                                                                \
+        HTTPT_BEGIN(str_, HTTP_MSG_RESPONSE, false);                    \
+        TEST_INT_EQ(msg->u.response.status_code, status_code_);         \
+        TEST_STRING_EQ(msg->u.response.reason_phrase, reason_phrase_);  \
+        TEST_INT_EQ(msg->version, version_);                            \
+        HTTPT_END();                                                    \
     } while (0)
 
 #define HTTPT_INVALID_STATUS_LINE(str_)                         \
@@ -141,21 +127,21 @@ main(int argc, char **argv) {
         buf = bf_buffer_new(0);                                 \
         bf_buffer_add_string(buf, str_);                        \
                                                                 \
-        http_parser_init(&parser, msg_type, &cfg);              \
-        parser.skip_header_processing = skip_header_processing; \
+        http_parser_init(&parser, HTTP_MSG_RESPONSE, &cfg);     \
         msg = &parser.msg;                                      \
                                                                 \
         ret = http_msg_parse(buf, &parser);                     \
         if (ret == 1) {                                         \
-            HTTPT_DIE("%s:%d: parsed invalid message",          \
-                      __FILE__, __LINE__);                      \
+            TEST_ABORT("parsed invalid message");               \
         } else if (ret == 0) {                                  \
-            HTTPT_DIE("%s:%d: truncated message",               \
-                      __FILE__, __LINE__);                      \
+            TEST_ABORT("truncated message");                    \
         }                                                       \
+                                                                \
+        http_parser_free(&parser);                              \
+        bf_buffer_delete(buf);                                  \
     } while (0)
 
-    msg_type = HTTP_MSG_RESPONSE;
+    http_cfg_init_client(&cfg);
 
     HTTPT_STATUS_LINE("HTTP/1.0 200 OK\r\n\r\n",
                       HTTP_OK, "OK", HTTP_1_0);
@@ -178,58 +164,59 @@ main(int argc, char **argv) {
     HTTPT_INVALID_STATUS_LINE("HTTP/1.0 200\r\n\r\n");
     HTTPT_INVALID_STATUS_LINE("HTTP/1.0 200 \r\n\r\n");
 
-#undef HTTP_STATUS_LINE
-#undef HTTP_INVALID_STATUS_LINE
+    http_cfg_free(&cfg);
+}
 
-    /* --------------------------------------------------------------------
-     *  Headers
-     * -------------------------------------------------------------------- */
-#define HTTPT_BEGIN_HEADERS(str_)                  \
-    do {                                           \
-        HTTPT_BEGIN("GET / HTTP/1.1\r\n" str_);    \
-        HTTPT_IS_EQUAL_INT(parser.status_code, 0); \
+TEST(headers) {
+    struct bf_buffer *buf;
+    struct http_cfg cfg;
+    struct http_parser parser;
+    struct http_msg *msg;
+
+#define HTTPT_BEGIN_HEADERS(str_)                                       \
+    do {                                                                \
+        HTTPT_BEGIN("GET / HTTP/1.1\r\n" str_, HTTP_MSG_REQUEST, true); \
+        TEST_INT_EQ(parser.status_code, 0);                             \
     } while (0)
 
-#define HTTPT_INVALID_HEADER(str_, status_code_)               \
-    do {                                                       \
-        HTTPT_BEGIN("GET / HTTP/1.1\r\n" str_);                \
-        HTTPT_IS_EQUAL_INT(parser.status_code, status_code_);  \
-        HTTPT_END();                                           \
+#define HTTPT_INVALID_HEADER(str_, status_code_)                        \
+    do {                                                                \
+        HTTPT_BEGIN("GET / HTTP/1.1\r\n" str_, HTTP_MSG_REQUEST, true); \
+        TEST_INT_EQ(parser.status_code, status_code_);                  \
+        HTTPT_END();                                                    \
     } while (0)
 
-#define HTTPT_IS_EQUAL_HEADER(idx_, name_, value_)               \
-    do {                                                         \
-        HTTPT_IS_EQUAL_STRING(msg->headers[idx_].name, name_);   \
-        HTTPT_IS_EQUAL_STRING(msg->headers[idx_].value, value_); \
+#define HTTPT_IS_EQUAL_HEADER(idx_, name_, value_)        \
+    do {                                                  \
+        TEST_STRING_EQ(msg->headers[idx_].name, name_);   \
+        TEST_STRING_EQ(msg->headers[idx_].value, value_); \
     } while (0)
 
-    msg_type = HTTP_MSG_REQUEST;
+    http_cfg_init_server(&cfg);
 
     cfg.max_header_name_length = 8;
     cfg.max_header_value_length = 20;
 
-    skip_header_processing = true;
-
     HTTPT_BEGIN_HEADERS("Foo: bar\r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(msg->nb_headers, 1);
+    TEST_UINT_EQ(msg->nb_headers, 1);
     HTTPT_IS_EQUAL_HEADER(0, "Foo", "bar");
     HTTPT_END();
 
     HTTPT_BEGIN_HEADERS("Key1: foo\r\nKey2: bar\r\nKey3: he llo\r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(msg->nb_headers, 3);
+    TEST_UINT_EQ(msg->nb_headers, 3);
     HTTPT_IS_EQUAL_HEADER(0, "Key1", "foo");
     HTTPT_IS_EQUAL_HEADER(1, "Key2", "bar");
     HTTPT_IS_EQUAL_HEADER(2, "Key3", "he llo");
     HTTPT_END();
 
     HTTPT_BEGIN_HEADERS("Key1:  foo  \r\nKey2:  he  llo \r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(msg->nb_headers, 2);
+    TEST_UINT_EQ(msg->nb_headers, 2);
     HTTPT_IS_EQUAL_HEADER(0, "Key1", "foo");
     HTTPT_IS_EQUAL_HEADER(1, "Key2", "he  llo");
     HTTPT_END();
 
     HTTPT_BEGIN_HEADERS("Key1: one\r\n\the\t \r\n \tllo\r\nKey2: foo\r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(msg->nb_headers, 2);
+    TEST_UINT_EQ(msg->nb_headers, 2);
     HTTPT_IS_EQUAL_HEADER(0, "Key1", "one he llo");
     HTTPT_IS_EQUAL_HEADER(1, "Key2", "foo");
     HTTPT_END();
@@ -251,48 +238,43 @@ main(int argc, char **argv) {
     HTTPT_INVALID_HEADER("Key: AVeryLargeValueABCDEF",
                          HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE);
 
+    http_cfg_free(&cfg);
+}
 
-    cfg.max_header_name_length = 128;
-    cfg.max_header_value_length = 4096;
+TEST(content_disposition) {
+    struct bf_buffer *buf;
+    struct http_cfg cfg;
+    struct http_parser parser;
+    struct http_msg *msg;
 
-#undef HTTPT_BEGIN_HEADERS
-#undef HTTPT_INVALID_HEADER
-#undef HTTPT_IS_EQUAL_HEADER
-
-    /* --------------------------------------------------------------------
-     *  Content-Disposition
-     * -------------------------------------------------------------------- */
-#define HTTPT_CONTENT_DISPOSITION_IS(header_, filename_)                     \
-    do {                                                                     \
-        char *filename;                                                      \
-        int ret;                                                             \
-                                                                             \
-        HTTPT_BEGIN("POST / HTTP/1.0\r\n"                                    \
-                    "Content-Length: 0\r\n"                                  \
-                    "Content-Disposition: attachment; " header_ "\r\n"       \
-                    "\r\n");                                                 \
-        if (parser.status_code > 0) {                                        \
-            HTTPT_DIE("%s:%d: invalid message: %s",                          \
-                      __FILE__, __LINE__, parser.errmsg);                    \
-        }                                                                    \
-                                                                             \
-        ret = http_msg_content_disposition_filename(msg, &filename);         \
-        if (ret == -1) {                                                     \
-            HTTPT_DIE("%s:%d: cannot read content disposition filename: %s", \
-                      __FILE__, __LINE__, http_get_error());                 \
-        } else if (ret == 0) {                                               \
-            HTTPT_DIE("%s:%d: content disposition filename not found",       \
-                      __FILE__, __LINE__);                                   \
-        }                                                                    \
-                                                                             \
-        HTTPT_IS_EQUAL_STRING(filename, filename_);                          \
-        http_free(filename);                                                 \
-                                                                             \
-        HTTPT_END();                                                         \
+#define HTTPT_CONTENT_DISPOSITION_IS(header_, filename_)               \
+    do {                                                               \
+        char *filename;                                                \
+        int ret;                                                       \
+                                                                       \
+        HTTPT_BEGIN("POST / HTTP/1.0\r\n"                              \
+                    "Content-Length: 0\r\n"                            \
+                    "Content-Disposition: attachment; " header_ "\r\n" \
+                    "\r\n",                                            \
+                    HTTP_MSG_REQUEST, false);                          \
+        if (parser.status_code > 0)                                    \
+            TEST_ABORT("invalid message: %s", parser.errmsg);          \
+                                                                       \
+        ret = http_msg_content_disposition_filename(msg, &filename);   \
+        if (ret == -1) {                                               \
+            TEST_ABORT("cannot read content disposition filename: %s", \
+                       http_get_error());                              \
+        } else if (ret == 0) {                                         \
+            TEST_ABORT("content disposition filename not found");      \
+        }                                                              \
+                                                                       \
+        TEST_STRING_EQ(filename, filename_);                           \
+        http_free(filename);                                           \
+                                                                       \
+        HTTPT_END();                                                   \
     } while (0)
 
-    msg_type = HTTP_MSG_REQUEST;
-    skip_header_processing = false;
+    http_cfg_init_server(&cfg);
 
     HTTPT_CONTENT_DISPOSITION_IS("filename=foo", "foo");
 
@@ -306,100 +288,118 @@ main(int argc, char **argv) {
     HTTPT_CONTENT_DISPOSITION_IS("filename=\"/home/user/foo\"", "foo");
     HTTPT_CONTENT_DISPOSITION_IS("filename=\"/home/foo/\"", "");
 
-#undef HTTPT_CONTENT_DISPOSITION_IS
+    http_cfg_free(&cfg);
+}
 
-    /* --------------------------------------------------------------------
-     *  Body
-     * -------------------------------------------------------------------- */
+TEST(body) {
+    struct bf_buffer *buf;
+    struct http_cfg cfg;
+    struct http_parser parser;
+    struct http_msg *msg;
+
 #define HTTPT_BEGIN_BODY(str_)                                                \
     do {                                                                      \
-        HTTPT_BEGIN("PUT / HTTP/1.0\r\nHost: localhost\r\n" str_);            \
+        HTTPT_BEGIN("PUT / HTTP/1.0\r\nHost: localhost\r\n" str_,             \
+                    HTTP_MSG_REQUEST, false);                                 \
                                                                               \
         if (parser.status_code > 0) {                                         \
-            HTTPT_DIE("%s:%d: invalid message (%s): %s",                      \
-                      __FILE__, __LINE__,                                     \
+            TEST_ABORT("invalid message (%s): %s",                            \
                       http_status_code_to_reason_phrase(parser.status_code),  \
                       parser.errmsg);                                         \
         }                                                                     \
     } while (0)
 
-    msg_type = HTTP_MSG_REQUEST;
-    skip_header_processing = false;
+    http_cfg_init_server(&cfg);
 
     HTTPT_BEGIN_BODY("Content-Length: 0\r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 0);
-    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "");
+    TEST_UINT_EQ(http_msg_body_length(msg), 0);
+    TEST_STRING_EQ(http_msg_body(msg), "");
     HTTPT_END();
 
     HTTPT_BEGIN_BODY("Content-Length: 3\r\n\r\nfoo");
-    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 3);
-    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "foo");
+    TEST_UINT_EQ(http_msg_body_length(msg), 3);
+    TEST_STRING_EQ(http_msg_body(msg), "foo");
     HTTPT_END();
 
     HTTPT_BEGIN_BODY("Content-Length: 8\r\n\r\nfoo\r\nbar");
-    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 8);
-    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "foo\r\nbar");
+    TEST_UINT_EQ(http_msg_body_length(msg), 8);
+    TEST_STRING_EQ(http_msg_body(msg), "foo\r\nbar");
     HTTPT_END();
 
-#undef HTTPT_BEGIN_BODY
+    http_cfg_free(&cfg);
+}
 
-    /* --------------------------------------------------------------------
-     *  Chunks
-     * -------------------------------------------------------------------- */
-#define HTTPT_BEGIN_CHUNKS(str_)                                    \
-    do {                                                            \
-        HTTPT_BEGIN("PUT / HTTP/1.1\r\nHost: localhost\r\n"         \
-                    "Transfer-Encoding: chunked\r\n\r\n"            \
-                    str_);                                          \
-                                                                    \
-        if (parser.status_code > 0) {                               \
-            HTTPT_DIE("%s:%d: invalid message: error %d (%s)",      \
-                      __FILE__, __LINE__, parser.status_code,       \
-                      parser.errmsg);                               \
-        }                                                           \
+TEST(chunks) {
+    struct bf_buffer *buf;
+    struct http_cfg cfg;
+    struct http_parser parser;
+    struct http_msg *msg;
+
+#define HTTPT_BEGIN_CHUNKS(str_)                               \
+    do {                                                       \
+        HTTPT_BEGIN("PUT / HTTP/1.1\r\nHost: localhost\r\n"    \
+                    "Transfer-Encoding: chunked\r\n\r\n" str_, \
+                    HTTP_MSG_REQUEST, false);                  \
+                                                               \
+        if (parser.status_code > 0) {                          \
+            TEST_ABORT("invalid message: error %d (%s)",       \
+                      parser.status_code, parser.errmsg);      \
+        }                                                      \
     } while (0)
 
+    http_cfg_init_server(&cfg);
+
     HTTPT_BEGIN_CHUNKS("0\r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 0);
-    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "");
+    TEST_UINT_EQ(http_msg_body_length(msg), 0);
+    TEST_STRING_EQ(http_msg_body(msg), "");
     HTTPT_END();
 
     HTTPT_BEGIN_CHUNKS("3\r\nfoo\r\n6\r\nfoobar\r\n0\r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 9);
-    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "foofoobar");
+    TEST_UINT_EQ(http_msg_body_length(msg), 9);
+    TEST_STRING_EQ(http_msg_body(msg), "foofoobar");
     HTTPT_END();
 
     HTTPT_BEGIN_CHUNKS("a\r\nfoobar baz\r\n0\r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 10);
-    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "foobar baz");
+    TEST_UINT_EQ(http_msg_body_length(msg), 10);
+    TEST_STRING_EQ(http_msg_body(msg), "foobar baz");
     HTTPT_END();
 
     HTTPT_BEGIN_CHUNKS("1;a=1\r\na\r\n1 ; a=1\r\nb\r\n0\r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 2);
-    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "ab");
+    TEST_UINT_EQ(http_msg_body_length(msg), 2);
+    TEST_STRING_EQ(http_msg_body(msg), "ab");
     HTTPT_END();
 
     HTTPT_BEGIN_CHUNKS("1;a=\"foo\"\r\na\r\n1 ; a=\"\"\r\nb\r\n0\r\n\r\n");
-    HTTPT_IS_EQUAL_UINT(http_msg_body_length(msg), 2);
-    HTTPT_IS_EQUAL_STRING(http_msg_body(msg), "ab");
+    TEST_UINT_EQ(http_msg_body_length(msg), 2);
+    TEST_STRING_EQ(http_msg_body(msg), "ab");
     HTTPT_END();
 
-#undef HTTPT_BEGIN_CHUNKS
+    http_cfg_free(&cfg);
+}
 
-#define HTTPT_INVALID_CHUNKS(str_, status_code_)                       \
-    do {                                                               \
-        HTTPT_BEGIN("PUT / HTTP/1.1\r\nHost: localhost\r\n"            \
-                    "Transfer-Encoding: chunked\r\n\r\n"               \
-                    str_);                                             \
-                                                                       \
-        if (parser.status_code != status_code_) {                      \
-            HTTPT_DIE("%s:%d: wrong http error %d (%s) instead of %d", \
-                      __FILE__, __LINE__, parser.status_code,          \
-                      parser.errmsg, status_code_);                    \
-        }                                                              \
-                                                                       \
-        HTTPT_END();                                                   \
+TEST(invalid_chunks) {
+    struct bf_buffer *buf;
+    struct http_cfg cfg;
+    struct http_parser parser;
+    struct http_msg *msg;
+
+#define HTTPT_INVALID_CHUNKS(str_, status_code_)                        \
+    do {                                                                \
+        HTTPT_BEGIN("PUT / HTTP/1.1\r\nHost: localhost\r\n"             \
+                    "Transfer-Encoding: chunked\r\n\r\n" str_,          \
+                    HTTP_MSG_REQUEST, false);                           \
+                                                                        \
+        if (parser.status_code != status_code_) {                       \
+            TEST_ABORT("wrong http error %d (%s) instead of %d",        \
+                      parser.status_code, parser.errmsg, status_code_); \
+        }                                                               \
+                                                                        \
+        HTTPT_END();                                                    \
     } while (0)
+
+    http_cfg_init_server(&cfg);
+
+    cfg.max_chunk_length = 16;
 
     /* Invalid length */
     HTTPT_INVALID_CHUNKS("\r\nfoo\r\n0\r\n\r\n", HTTP_BAD_REQUEST);
@@ -409,11 +409,25 @@ main(int argc, char **argv) {
     HTTPT_INVALID_CHUNKS("11\r\nabcdefghijklmnopq\r\n0\r\n\r\n",
                          HTTP_REQUEST_ENTITY_TOO_LARGE);
 
-#undef HTTPT_INVALID_CHUNKS
-
-#undef HTTPT_BEGIN
-#undef HTTPT_END
-
     http_cfg_free(&cfg);
-    return 0;
+}
+
+int
+main(int argc, char **argv) {
+    struct test_suite *suite;
+
+    suite = test_suite_new("messages");
+    test_suite_initialize_from_args(suite, argc, argv);
+
+    test_suite_start(suite);
+
+    TEST_RUN(suite, request_lines);
+    TEST_RUN(suite, status_lines);
+    TEST_RUN(suite, headers);
+    TEST_RUN(suite, content_disposition);
+    TEST_RUN(suite, body);
+    TEST_RUN(suite, chunks);
+    TEST_RUN(suite, invalid_chunks);
+
+    test_suite_print_results_and_exit(suite);
 }
