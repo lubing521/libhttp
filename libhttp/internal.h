@@ -21,6 +21,10 @@
 
 #include <iconv.h>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
+
 #include <buffer.h>
 #include <hashtable.h>
 
@@ -63,12 +67,14 @@ const char *http_fmt_data(const char *, size_t);
 #endif
 
 /* Streams */
+struct http_stream;
+
 struct http_stream_functions {
     void (*delete_func)(intptr_t);
-    int (*write_func)(intptr_t, int, size_t *);
+    int (*write_func)(struct http_stream *, intptr_t, int, size_t *);
 };
 
-struct http_stream *http_stream_new(void);
+struct http_stream *http_stream_new(struct http_connection *);
 void http_stream_delete(struct http_stream *);
 
 void http_stream_add_entry(struct http_stream *, intptr_t,
@@ -304,6 +310,9 @@ struct http_connection {
 
     int sock;
 
+    SSL *ssl;
+    int ssl_last_write_length;
+
     struct event *ev_read;
     struct event *ev_write;
     bool is_ev_write_enabled;
@@ -314,6 +323,7 @@ struct http_connection {
     char address[HTTP_HOST_PORT_BUFSZ];
 
     bool shutting_down;
+    bool closed_by_peer;
 
     struct http_parser parser;
 
@@ -440,6 +450,8 @@ struct http_server {
     struct ht_table *connections;
 
     struct http_route_base *route_base;
+
+    SSL_CTX *ssl_ctx;
 };
 
 void http_server_error(const struct http_server *, const char *, ...)
@@ -501,5 +513,18 @@ struct http_uri {
 
 char *http_uri_decode_query_component(const char *, size_t);
 void http_uri_encode_query_component(const char *, struct bf_buffer *);
+
+/* SSL */
+const char *http_ssl_get_error(void);
+
+SSL_CTX *http_ssl_server_ctx_new(const struct http_cfg *);
+SSL *http_ssl_new(SSL_CTX *, int);
+
+ssize_t http_buf_ssl_read(struct bf_buffer *, int, size_t,
+                          SSL *, int *);
+ssize_t http_buf_ssl_write(struct bf_buffer *, int, size_t,
+                           SSL *, int *);
+
+ssize_t http_connection_ssl_write(struct http_connection *, struct bf_buffer *);
 
 #endif

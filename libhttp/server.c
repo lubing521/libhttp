@@ -73,6 +73,40 @@ http_server_new(struct http_cfg *cfg, struct event_base *ev_base) {
     server->listeners = ht_table_new(ht_hash_int32, ht_equal_int32);
     server->connections = ht_table_new(ht_hash_int32, ht_equal_int32);
 
+    if (cfg->use_ssl) {
+        const char *crt_path, *key_path;
+
+        crt_path = cfg->u.server.ssl_certificate;
+        if (!crt_path) {
+            http_set_error("no ssl certificate set in configuration");
+            goto error;
+        }
+
+        key_path = cfg->u.server.ssl_key;
+        if (!key_path) {
+            http_set_error("no ssl private key set in configuration");
+            goto error;
+        }
+
+        server->ssl_ctx = http_ssl_server_ctx_new(cfg);
+        if (!server->ssl_ctx)
+            goto error;
+
+        if (SSL_CTX_use_certificate_file(server->ssl_ctx,
+                                         crt_path, SSL_FILETYPE_PEM) != 1) {
+            http_set_error("cannot use ssl certificate from %s: %s",
+                           crt_path, http_ssl_get_error());
+            goto error;
+        }
+
+        if (SSL_CTX_use_PrivateKey_file(server->ssl_ctx,
+                                        key_path, SSL_FILETYPE_PEM) != 1) {
+            http_set_error("cannot use ssl private key from %s: %s",
+                           key_path, http_ssl_get_error());
+            goto error;
+        }
+    }
+
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_flags = 0;
     hints.ai_family = AF_UNSPEC;
@@ -170,6 +204,9 @@ http_server_delete(struct http_server *server) {
 
         ht_table_iterator_delete(it);
     }
+
+    if (server->ssl_ctx)
+        SSL_CTX_free(server->ssl_ctx);
 
     memset(server, 0, sizeof(struct http_server));
     http_free(server);
@@ -457,6 +494,7 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
     struct http_server *server;
     struct http_listener *listener;
     struct http_connection *connection;
+    struct http_cfg *cfg;
     char host[NI_MAXHOST];
     char port[NI_MAXSERV];
     struct sockaddr_storage addr;
@@ -466,6 +504,8 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
 
     listener = arg;
     server = listener->server;
+
+    cfg = server->cfg;
 
     addrlen = sizeof(struct sockaddr_storage);
     client_sock = accept(listener->sock, (struct sockaddr *)&addr, &addrlen);
@@ -510,8 +550,18 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
         snprintf(connection->address, HTTP_HOST_PORT_BUFSZ,
                  "[%s]:%s", host, port);
     } else {
-        http_set_error("unknown address family %d", addr.ss_family);
+        http_server_error(server, "unknown address family %d",
+                          addr.ss_family);
         http_connection_delete(connection);
         return;
+    }
+
+    if (cfg->use_ssl) {
+        if (SSL_accept(connection->ssl) != 1) {
+            http_server_error(server, "cannot accept ssl connection: %s",
+                              http_ssl_get_error());
+            http_connection_delete(connection);
+            return;
+        }
     }
 }

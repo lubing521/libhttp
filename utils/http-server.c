@@ -68,15 +68,24 @@ static void https_upload_unbuffered_post(struct http_connection *,
 
 int
 main(int argc, char **argv) {
-    bool bufferize_body;
+    const char *ssl_crt, *ssl_key;
+    bool bufferize_body, use_ssl;
     struct http_cfg cfg;
     int opt;
 
+    ssl_crt = NULL;
+    ssl_key = NULL;
+
     bufferize_body = true;
+    use_ssl = false;
 
     opterr = 0;
-    while ((opt = getopt(argc, argv, "bhu")) != -1) {
+    while ((opt = getopt(argc, argv, "bc:hk:us")) != -1) {
         switch (opt) {
+        case 'c':
+            ssl_crt = optarg;
+            break;
+
         case 'b':
             bufferize_body = true;
             break;
@@ -85,8 +94,16 @@ main(int argc, char **argv) {
             https_usage(argv[0], 0);
             break;
 
+        case 'k':
+            ssl_key = optarg;
+            break;
+
         case 'u':
             bufferize_body = false;
+            break;
+
+        case 's':
+            use_ssl = true;
             break;
 
         case '?':
@@ -94,9 +111,17 @@ main(int argc, char **argv) {
         }
     }
 
+    if (use_ssl)
+        http_ssl_initialize();
+
     http_cfg_init_server(&cfg);
 
     cfg.port = "8080";
+
+    cfg.use_ssl = use_ssl;
+    cfg.u.server.ssl_certificate = ssl_crt;
+    cfg.u.server.ssl_key = ssl_key;
+
     cfg.error_hook = https_on_error;
     cfg.trace_hook = https_on_trace;
     cfg.request_hook = https_on_request;
@@ -113,6 +138,9 @@ main(int argc, char **argv) {
     https_shutdown();
 
     http_cfg_free(&cfg);
+
+    if (use_ssl)
+        http_ssl_shutdown();
     return 0;
 }
 
@@ -121,9 +149,12 @@ https_usage(const char *argv0, int exit_code) {
     printf("Usage: %s [-bhu]\n"
             "\n"
             "Options:\n"
-            "  -b bufferize requests\n"
-            "  -h display help\n"
-            "  -u do not bufferize requests\n",
+            "  -b         bufferize requests\n"
+            "  -c <path>  set the ssl certificate\n"
+            "  -h         display help\n"
+            "  -k <path>  set the ssl private key\n"
+            "  -u         do not bufferize requests\n"
+            "  -s         use ssl\n",
             argv0);
     exit(exit_code);
 }

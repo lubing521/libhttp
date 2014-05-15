@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <string.h>
 
@@ -35,6 +36,8 @@ static struct http_stream_entry *http_stream_entry_new(intptr_t);
 static void http_stream_entry_delete(struct http_stream_entry *);
 
 struct http_stream {
+    struct http_connection *connection;
+
     struct http_stream_entry *first_entry;
     struct http_stream_entry *last_entry;
 };
@@ -42,8 +45,9 @@ struct http_stream {
 static void http_stream_remove_first_entry(struct http_stream *);
 
 
-static int http_stream_buffer_write(intptr_t, int, size_t *);
 static void http_stream_buffer_delete(intptr_t);
+static int http_stream_buffer_write(struct http_stream *,
+                                    intptr_t, int, size_t *);
 
 struct http_stream_functions http_stream_buffer_functions = {
     .delete_func = http_stream_buffer_delete,
@@ -71,8 +75,9 @@ struct http_stream_file {
 
 static struct http_stream_file *http_stream_file_new(int, size_t, const char *);
 
-static int http_stream_file_write(intptr_t, int, size_t *);
 static void http_stream_file_delete(intptr_t);
+static int http_stream_file_write(struct http_stream *,
+                                  intptr_t, int, size_t *);
 
 struct http_stream_functions http_stream_file_functions = {
     .delete_func = http_stream_file_delete,
@@ -81,10 +86,12 @@ struct http_stream_functions http_stream_file_functions = {
 
 
 struct http_stream *
-http_stream_new(void) {
+http_stream_new(struct http_connection *connection) {
     struct http_stream *stream;
 
     stream = http_malloc0(sizeof(struct http_stream));
+
+    stream->connection = connection;
 
     return stream;
 }
@@ -220,7 +227,7 @@ http_stream_write(struct http_stream *stream, int fd, size_t *psz) {
     if (!entry)
         return 0;
 
-    ret = entry->functions.write_func(entry->arg, fd, psz);
+    ret = entry->functions.write_func(stream, entry->arg, fd, psz);
     if (ret <= 0) {
         /* Either something went wrong or the stream entry was entirely
          * consumed. */
@@ -277,16 +284,28 @@ http_stream_remove_first_entry(struct http_stream *stream) {
 }
 
 static int
-http_stream_buffer_write(intptr_t arg, int fd, size_t *psz) {
+http_stream_buffer_write(struct http_stream *stream,
+                         intptr_t arg, int fd, size_t *psz) {
+    struct http_connection *connection;
+    const struct http_cfg *cfg;
     struct bf_buffer *buf;
     ssize_t ret;
 
     buf = (struct bf_buffer *)arg;
 
-    ret = bf_buffer_write(buf, fd);
-    if (ret == -1) {
-        http_set_error("%s", bf_get_error());
-        return -1;
+    connection = stream->connection;
+    cfg = http_connection_get_cfg(connection);
+
+    if (cfg->use_ssl) {
+        ret = http_connection_ssl_write(connection, buf);
+        if (ret <= 0)
+            return ret;
+    } else {
+        ret = bf_buffer_write(buf, fd);
+        if (ret == -1) {
+            http_set_error("%s", bf_get_error());
+            return -1;
+        }
     }
 
     *psz = (size_t)ret;
@@ -341,11 +360,17 @@ http_stream_file_delete(intptr_t arg) {
 }
 
 static int
-http_stream_file_write(intptr_t arg, int fd, size_t *psz) {
+http_stream_file_write(struct http_stream *stream,
+                       intptr_t arg, int fd, size_t *psz) {
+    struct http_connection *connection;
+    const struct http_cfg *cfg;
     struct http_stream_file *file;
     ssize_t ret;
 
     file = (struct http_stream_file *)arg;
+
+    connection = stream->connection;
+    cfg = http_connection_get_cfg(connection);
 
     /* If we have no data ready to write, we need to read the file */
     if (bf_buffer_length(file->buf) == 0) {
@@ -409,10 +434,16 @@ http_stream_file_write(intptr_t arg, int fd, size_t *psz) {
     }
 
     /* Write as much as possible */
-    ret = bf_buffer_write(file->buf, fd);
-    if (ret == -1) {
-        http_set_error("%s", strerror(errno));
-        return -1;
+    if (cfg->use_ssl) {
+        ret = http_connection_ssl_write(connection, file->buf);
+        if (ret <= 0)
+            return ret;
+    } else {
+        ret = bf_buffer_write(file->buf, fd);
+        if (ret == -1) {
+            http_set_error("%s", strerror(errno));
+            return -1;
+        }
     }
 
     if (bf_buffer_length(file->buf) == 0 && file->done_reading) {

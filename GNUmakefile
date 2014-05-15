@@ -10,6 +10,7 @@ CFLAGS+= -Wall -Wextra -Werror -Wsign-conversion
 CFLAGS+= -Wno-unused-parameter -Wno-unused-function
 
 LDFLAGS=
+LDLIBS= -lhttp -lhashtable -lbuffer -levent -lcrypto -lssl
 
 PANDOC_OPTS= -s --toc --email-obfuscation=none
 
@@ -59,7 +60,7 @@ tests_BIN= $(subst .o,,$(tests_OBJ))
 
 $(tests_BIN): CFLAGS+= -Ilibhttp -Itests
 $(tests_BIN): LDFLAGS+= -L.
-$(tests_BIN): LDLIBS+= -lhttp -lhashtable -lbuffer -levent -lutest
+$(tests_BIN): LDLIBS+= -lutest
 
 # Target: utils
 utils_SRC= $(wildcard utils/*.c)
@@ -68,7 +69,6 @@ utils_BIN= $(subst .o,,$(utils_OBJ))
 
 $(utils_BIN): CFLAGS+= -Ilibhttp
 $(utils_BIN): LDFLAGS+= -L.
-$(utils_BIN): LDLIBS+= -lhttp -lhashtable -lbuffer -levent
 
 # Target: doc
 doc_SRC= $(wildcard doc/*.mkd)

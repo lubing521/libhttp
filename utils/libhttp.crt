@@ -1,0 +1,66 @@
+Certificate:
+    Data:
+        Version: 1 (0x0)
+        Serial Number: 1 (0x1)
+    Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C=FR/emailAddress=galdor@snwosyn.net
+        Validity
+            Not Before: May 15 10:17:56 2014 GMT
+            Not After : May 12 10:17:56 2024 GMT
+        Subject: C=FR, CN=localhost
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:d4:df:b0:1d:35:81:4f:ca:d7:90:9f:15:54:43:
+                    46:5f:23:84:32:00:54:b8:d4:57:97:e0:77:ee:dd:
+                    9c:fd:2a:98:f1:01:93:f7:0c:1b:04:96:b6:80:34:
+                    ce:2d:b5:33:75:f0:f8:d1:da:20:3c:ff:dd:ae:ed:
+                    18:9a:b1:79:93:6f:94:2a:b1:47:3a:37:3b:c6:1a:
+                    70:f3:38:f2:7d:2a:f4:a7:eb:59:90:50:75:ed:ec:
+                    7e:6c:ec:8a:61:b6:4e:cf:33:ed:29:09:5c:18:99:
+                    db:9f:2b:f3:c3:6f:d9:93:69:52:e7:c6:e6:cc:f1:
+                    11:73:ee:e7:ac:93:3b:1c:af:bc:80:8c:9b:6c:c7:
+                    61:f7:2c:43:b8:46:06:d0:0e:27:9c:e1:ba:c1:8b:
+                    d0:cd:7b:aa:8e:9f:28:6f:15:77:5c:08:f3:22:23:
+                    9e:d8:01:d9:27:e6:2f:3e:d9:98:19:5d:c0:e0:92:
+                    35:9b:84:87:50:62:a9:84:08:5c:d9:03:fd:9f:ff:
+                    b7:91:22:57:f0:da:3b:54:6d:d3:07:f7:27:72:22:
+                    ea:be:3a:40:bd:20:41:6c:ca:73:63:88:45:df:17:
+                    f1:5d:8c:03:23:7a:d6:ee:aa:bf:9d:7d:ca:63:8b:
+                    c7:1b:57:e6:3a:2d:70:39:69:12:aa:b7:6e:fb:94:
+                    11:c7
+                Exponent: 65537 (0x10001)
+    Signature Algorithm: sha256WithRSAEncryption
+         43:a2:2f:68:d6:a0:65:d6:29:99:c4:95:e9:d7:d2:a4:c3:b6:
+         87:90:0b:e1:a1:43:df:e1:c7:e8:15:22:61:a8:34:15:91:30:
+         e9:ca:4a:bf:fa:12:71:3a:2c:22:12:c0:19:da:c1:08:3c:bc:
+         9c:da:01:fe:29:e5:69:6c:99:0f:e7:1c:a2:6f:02:c0:4d:a8:
+         bd:f3:c4:7d:c4:4f:e0:1e:f2:05:be:8e:b0:eb:84:84:48:0f:
+         3a:2f:a5:47:5d:08:a7:4a:c2:c8:44:fa:c8:90:c1:58:35:2b:
+         06:ae:04:c0:0e:12:fe:8c:e1:bd:c2:b2:9e:63:77:0f:f7:e8:
+         8a:fb:fc:f3:24:b7:8b:35:e4:c5:fb:2a:4b:dc:37:55:22:16:
+         f2:40:5b:c2:48:be:14:13:ef:36:70:e6:8c:56:1d:17:8d:83:
+         c2:b1:53:83:60:d8:58:c8:c5:82:46:8e:cb:47:01:1f:8f:64:
+         e6:67:18:fc:9b:56:db:12:d3:32:75:10:e7:d7:15:39:3c:c1:
+         46:c3:92:71:2a:d2:94:f5:a4:de:e9:72:5e:79:1e:18:57:ab:
+         e8:72:df:fe:cd:73:50:ee:e3:ab:b1:20:b4:2b:c9:72:0d:cc:
+         d7:90:03:c2:64:4e:9c:76:f1:64:51:18:d3:5b:2e:34:05:f9:
+         8e:e4:7c:5c
+-----BEGIN CERTIFICATE-----
+MIICxTCCAa0CAQEwDQYJKoZIhvcNAQELBQAwMDELMAkGA1UEBhMCRlIxITAfBgkq
+hkiG9w0BCQEWEmdhbGRvckBzbndvc3luLm5ldDAeFw0xNDA1MTUxMDE3NTZaFw0y
+NDA1MTIxMDE3NTZaMCExCzAJBgNVBAYTAkZSMRIwEAYDVQQDEwlsb2NhbGhvc3Qw
+ggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDU37AdNYFPyteQnxVUQ0Zf
+I4QyAFS41FeX4Hfu3Zz9KpjxAZP3DBsElraANM4ttTN18PjR2iA8/92u7RiasXmT
+b5QqsUc6NzvGGnDzOPJ9KvSn61mQUHXt7H5s7Iphtk7PM+0pCVwYmdufK/PDb9mT
+aVLnxubM8RFz7ueskzscr7yAjJtsx2H3LEO4RgbQDiec4brBi9DNe6qOnyhvFXdc
+CPMiI57YAdkn5i8+2ZgZXcDgkjWbhIdQYqmECFzZA/2f/7eRIlfw2jtUbdMH9ydy
+Iuq+OkC9IEFsynNjiEXfF/FdjAMjetbuqr+dfcpji8cbV+Y6LXA5aRKqt277lBHH
+AgMBAAEwDQYJKoZIhvcNAQELBQADggEBAEOiL2jWoGXWKZnElenX0qTDtoeQC+Gh
+Q9/hx+gVImGoNBWRMOnKSr/6EnE6LCISwBnawQg8vJzaAf4p5WlsmQ/nHKJvAsBN
+qL3zxH3ET+Ae8gW+jrDrhIRIDzovpUddCKdKwshE+siQwVg1KwauBMAOEv6M4b3C
+sp5jdw/36Ir7/PMkt4s15MX7KkvcN1UiFvJAW8JIvhQT7zZw5oxWHReNg8KxU4Ng
+2FjIxYJGjstHAR+PZOZnGPybVtsS0zJ1EOfXFTk8wUbDknEq0pT1pN7pcl55HhhX
+q+hy3/7Nc1Du46uxILQryXINzNeQA8JkTpx28WRRGNNbLjQF+Y7kfFw=
+-----END CERTIFICATE-----

@@ -252,6 +252,9 @@ struct http_cfg {
     const char *host;
     const char *port;
 
+    bool use_ssl;
+    const char *ssl_ciphers;
+
     http_error_hook error_hook;
     http_trace_hook trace_hook;
     http_request_hook request_hook;
@@ -264,6 +267,9 @@ struct http_cfg {
             size_t max_request_uri_length;
 
             http_error_sender error_sender;
+
+            const char *ssl_certificate;
+            const char *ssl_key;
         } server;
 
         struct {
@@ -412,5 +418,9 @@ char *http_mime_q_encode(const char *);
 #define HTTP_MIME_BOUNDARY_SZ (32 + 1)
 
 void http_mime_generate_boundary(char [static HTTP_MIME_BOUNDARY_SZ], size_t);
+
+/* SSL */
+void http_ssl_initialize(void);
+void http_ssl_shutdown(void);
 
 #endif

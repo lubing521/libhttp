@@ -25,9 +25,12 @@ void
 http_cfg_init_server(struct http_cfg *cfg) {
     http_cfg_init_base(cfg);
 
+    cfg->ssl_ciphers = "TLSv1+HIGH:!SSLv2:!aNULL:!eNULL:@STRENGTH";
+
     cfg->u.server.connection_backlog = 5;
     cfg->u.server.max_request_uri_length = 2048;
     cfg->u.server.error_sender = http_default_error_sender;
+
 }
 
 void

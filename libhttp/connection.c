@@ -76,6 +76,14 @@ http_connection_new(enum http_connection_type type, void *client_or_server,
 
     connection->sock = sock;
 
+    if (type == HTTP_CONNECTION_SERVER) {
+        if (cfg->use_ssl) {
+            connection->ssl = http_ssl_new(connection->server->ssl_ctx, sock);
+            if (!connection->ssl)
+                goto error;
+        }
+    }
+
     connection->ev_read = event_new(ev_base, connection->sock,
                                     EV_READ | EV_PERSIST,
                                     http_connection_on_read_event,
@@ -101,7 +109,7 @@ http_connection_new(enum http_connection_type type, void *client_or_server,
     }
 
     connection->rbuf = bf_buffer_new(0);
-    connection->wstream = http_stream_new();
+    connection->wstream = http_stream_new(connection);
 
     if (type == HTTP_CONNECTION_SERVER) {
         msg_type = HTTP_MSG_REQUEST;
@@ -124,6 +132,38 @@ http_connection_new(enum http_connection_type type, void *client_or_server,
 error:
     http_connection_delete(connection);
     return NULL;
+}
+
+void
+http_connection_delete(struct http_connection *connection) {
+    if (!connection)
+        return;
+
+    if (connection->sock >= 0) {
+        if (connection->type == HTTP_CONNECTION_SERVER) {
+            ht_table_remove(connection->server->connections,
+                            HT_INT32_TO_POINTER(connection->sock));
+        }
+
+        close(connection->sock);
+        connection->sock = -1;
+    }
+
+    if (connection->ev_read)
+        event_free(connection->ev_read);
+    if (connection->ev_write)
+        event_free(connection->ev_write);
+
+    bf_buffer_delete(connection->rbuf);
+    http_stream_delete(connection->wstream);
+
+    http_parser_free(&connection->parser);
+
+    if (connection->ssl)
+        SSL_free(connection->ssl);
+
+    memset(connection, 0, sizeof(struct http_connection));
+    http_free(connection);
 }
 
 const struct http_cfg *
@@ -194,35 +234,6 @@ http_connection_printf(struct http_connection *connection,
 
         connection->is_ev_write_enabled = true;
     }
-}
-
-void
-http_connection_delete(struct http_connection *connection) {
-    if (!connection)
-        return;
-
-    if (connection->sock >= 0) {
-        if (connection->type == HTTP_CONNECTION_SERVER) {
-            ht_table_remove(connection->server->connections,
-                            HT_INT32_TO_POINTER(connection->sock));
-        }
-
-        close(connection->sock);
-        connection->sock = -1;
-    }
-
-    if (connection->ev_read)
-        event_free(connection->ev_read);
-    if (connection->ev_write)
-        event_free(connection->ev_write);
-
-    bf_buffer_delete(connection->rbuf);
-    http_stream_delete(connection->wstream);
-
-    http_parser_free(&connection->parser);
-
-    memset(connection, 0, sizeof(struct http_connection));
-    http_free(connection);
 }
 
 int
@@ -415,16 +426,51 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
 
     cfg = http_connection_get_cfg(connection);
 
-    ret = bf_buffer_read(connection->rbuf, connection->sock, BUFSIZ);
-    if (ret == -1) {
-        if (errno != ECONNRESET) {
-            http_connection_abort(connection);
-            http_connection_error(connection, "cannot read socket: %s",
-                                  strerror(errno));
-        }
+    if (cfg->use_ssl) {
+        int errcode;
 
-        http_connection_delete(connection);
-        return;
+        ret = http_buf_ssl_read(connection->rbuf, connection->sock, BUFSIZ,
+                                connection->ssl, &errcode);
+        if (ret == -1) {
+            switch (errcode) {
+            case SSL_ERROR_WANT_READ:
+                /* The read event handler is always enabled, so we just
+                 * return: we will call SSL_read() again the next time we get
+                 * a read event. */
+                 break;
+
+            case SSL_ERROR_WANT_WRITE:
+                if (event_add(connection->ev_write, NULL) == -1) {
+                    http_connection_error(connection,
+                                          "cannot add write event handler: %s",
+                                          strerror(errno));
+                    http_connection_delete(connection);
+                    break;
+                }
+
+                connection->is_ev_write_enabled = true;
+                break;
+
+            default:
+                http_connection_error(connection, "cannot read ssl socket: %s",
+                                      http_ssl_get_error());
+                http_connection_abort(connection);
+                http_connection_delete(connection);
+                break;
+            }
+        }
+    } else {
+        ret = bf_buffer_read(connection->rbuf, connection->sock, BUFSIZ);
+        if (ret == -1) {
+            if (errno != ECONNRESET) {
+                http_connection_error(connection, "cannot read socket: %s",
+                                      strerror(errno));
+                http_connection_abort(connection);
+            }
+
+            http_connection_delete(connection);
+            return;
+        }
     }
 
     if (ret == 0) {
@@ -551,9 +597,12 @@ http_connection_on_write_event(evutil_socket_t sock, short events, void *arg) {
 
     ret = http_stream_write(connection->wstream, connection->sock, &sz);
     if (ret == -1) {
-        http_connection_abort(connection);
-        http_connection_error(connection, "cannot write to socket: %s",
-                              strerror(errno));
+        if (!connection->closed_by_peer) {
+            http_connection_abort(connection);
+            http_connection_error(connection, "cannot write to socket: %s",
+                                  strerror(errno));
+        }
+
         http_connection_delete(connection);
         return;
     }
