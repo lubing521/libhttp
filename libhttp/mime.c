@@ -54,8 +54,7 @@ struct http_media_type *
 http_media_type_new(const char *string) {
     struct http_media_type *media_type;
 
-    media_type = http_malloc(sizeof(struct http_media_type));
-    memset(media_type, 0, sizeof(struct http_media_type));
+    media_type = http_malloc0(sizeof(struct http_media_type));
 
     if (http_media_type_parse(media_type, string) == -1) {
         http_media_type_delete(media_type);

@@ -61,6 +61,16 @@ http_malloc(size_t sz) {
 }
 
 void *
+http_malloc0(size_t sz) {
+    void *ptr;
+
+    ptr = http_malloc(sz);
+    memset(ptr, 0, sz);
+
+    return ptr;
+}
+
+void *
 http_calloc(size_t nb, size_t sz) {
     void *ptr;
 

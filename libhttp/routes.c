@@ -152,8 +152,7 @@ http_route_new(enum http_method method, const char *path,
                http_msg_handler msg_handler) {
     struct http_route *route;
 
-    route = http_malloc(sizeof(struct http_route));
-    memset(route, 0, sizeof(struct http_route));
+    route = http_malloc0(sizeof(struct http_route));
 
     route->method = method;
     route->path = http_strdup(path);
@@ -196,8 +195,7 @@ struct http_route_base *
 http_route_base_new(void) {
     struct http_route_base *base;
 
-    base = http_malloc(sizeof(struct http_route_base));
-    memset(base, 0, sizeof(struct http_route_base));
+    base = http_malloc0(sizeof(struct http_route_base));
 
     base->sorted = true;
 

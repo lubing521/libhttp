@@ -64,8 +64,7 @@ http_server_new(struct http_cfg *cfg, struct event_base *ev_base) {
     struct addrinfo hints, *res;
     int ret;
 
-    server = http_malloc(sizeof(struct http_server));
-    memset(server, 0, sizeof(struct http_server));
+    server = http_malloc0(sizeof(struct http_server));
 
     server->cfg = cfg;
 

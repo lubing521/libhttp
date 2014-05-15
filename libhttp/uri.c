@@ -37,8 +37,7 @@ struct http_uri *
 http_uri_new(const char *str) {
     struct http_uri *uri;
 
-    uri = http_malloc(sizeof(struct http_uri));
-    memset(uri, 0, sizeof(struct http_uri));
+    uri = http_malloc0(sizeof(struct http_uri));
 
     if (str) {
         if (http_uri_parse(str, uri) == -1) {

@@ -84,8 +84,7 @@ struct http_stream *
 http_stream_new(void) {
     struct http_stream *stream;
 
-    stream = http_malloc(sizeof(struct http_stream));
-    memset(stream, 0, sizeof(struct http_stream));
+    stream = http_malloc0(sizeof(struct http_stream));
 
     return stream;
 }
@@ -242,8 +241,7 @@ static struct http_stream_entry *
 http_stream_entry_new(intptr_t arg) {
     struct http_stream_entry *entry;
 
-    entry = http_malloc(sizeof(struct http_stream_entry));
-    memset(entry, 0, sizeof(struct http_stream_entry));
+    entry = http_malloc0(sizeof(struct http_stream_entry));
 
     entry->arg = arg;
 
@@ -308,8 +306,7 @@ static struct http_stream_file *
 http_stream_file_new(int fd, size_t file_sz, const char *path) {
     struct http_stream_file *file;
 
-    file = http_malloc(sizeof(struct http_stream_file));
-    memset(file, 0, sizeof(struct http_stream_file));
+    file = http_malloc0(sizeof(struct http_stream_file));
 
     file->fd = fd;
     file->file_sz = file_sz;

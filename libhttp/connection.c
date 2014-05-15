@@ -55,8 +55,7 @@ http_connection_new(enum http_connection_type type, void *client_or_server,
     struct http_cfg *cfg;
     enum http_msg_type msg_type;
 
-    connection = http_malloc(sizeof(struct http_connection));
-    memset(connection, 0, sizeof(struct http_connection));
+    connection = http_malloc0(sizeof(struct http_connection));
 
     connection->type = type;
 

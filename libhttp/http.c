@@ -221,8 +221,7 @@ struct http_headers *
 http_headers_new(void) {
     struct http_headers *headers;
 
-    headers = http_malloc(sizeof(struct http_headers));
-    memset(headers, 0, sizeof(struct http_headers));
+    headers = http_malloc0(sizeof(struct http_headers));
 
     return headers;
 }
