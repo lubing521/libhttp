@@ -130,7 +130,7 @@ http_connection_new(enum http_connection_type type, void *client_or_server,
     return connection;
 
 error:
-    http_connection_delete(connection);
+    http_connection_discard(connection);
     return NULL;
 }
 
@@ -140,11 +140,6 @@ http_connection_delete(struct http_connection *connection) {
         return;
 
     if (connection->sock >= 0) {
-        if (connection->type == HTTP_CONNECTION_SERVER) {
-            ht_table_remove(connection->server->connections,
-                            HT_INT32_TO_POINTER(connection->sock));
-        }
-
         close(connection->sock);
         connection->sock = -1;
     }
@@ -236,18 +231,28 @@ http_connection_printf(struct http_connection *connection,
     }
 }
 
+void
+http_connection_discard(struct http_connection *connection) {
+    if (connection->sock >= 0) {
+        if (connection->type == HTTP_CONNECTION_SERVER)
+            http_server_unregister_connection(connection->server, connection);
+    }
+
+    http_connection_delete(connection);
+}
+
 int
 http_connection_shutdown(struct http_connection *connection) {
     if (event_del(connection->ev_read) == -1) {
         http_set_error("cannot remove read event handler: %s",
                        strerror(errno));
-        http_connection_delete(connection);
+        http_connection_discard(connection);
         return -1;
     }
 
     if (shutdown(connection->sock, SHUT_RD) == -1) {
         http_set_error("cannot shutdown socket: %s", strerror(errno));
-        http_connection_delete(connection);
+        http_connection_discard(connection);
         return -1;
     }
 
@@ -444,7 +449,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                     http_connection_error(connection,
                                           "cannot add write event handler: %s",
                                           strerror(errno));
-                    http_connection_delete(connection);
+                    http_connection_discard(connection);
                     break;
                 }
 
@@ -455,7 +460,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                 http_connection_error(connection, "cannot read ssl socket: %s",
                                       http_ssl_get_error());
                 http_connection_abort(connection);
-                http_connection_delete(connection);
+                http_connection_discard(connection);
                 break;
             }
         }
@@ -468,13 +473,13 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                 http_connection_abort(connection);
             }
 
-            http_connection_delete(connection);
+            http_connection_discard(connection);
             return;
         }
     }
 
     if (ret == 0) {
-        http_connection_delete(connection);
+        http_connection_discard(connection);
         return;
     }
 
@@ -603,7 +608,7 @@ http_connection_on_write_event(evutil_socket_t sock, short events, void *arg) {
                                   strerror(errno));
         }
 
-        http_connection_delete(connection);
+        http_connection_discard(connection);
         return;
     }
 
@@ -613,7 +618,7 @@ http_connection_on_write_event(evutil_socket_t sock, short events, void *arg) {
         connection->is_ev_write_enabled = false;
 
         if (connection->shutting_down) {
-            http_connection_delete(connection);
+            http_connection_discard(connection);
             return;
         }
     }
@@ -1051,7 +1056,7 @@ http_connection_on_msg_processed(struct http_connection *connection) {
             http_connection_error(connection,
                                   "cannot shutdown connection: %s",
                                   http_get_error());
-            http_connection_delete(connection);
+            http_connection_discard(connection);
             return;
         }
     }
@@ -1066,7 +1071,7 @@ http_connection_on_msg_processed(struct http_connection *connection) {
         http_connection_abort(connection);
         http_connection_error(connection, "cannot reset parser: %s",
                               http_get_error());
-        http_connection_delete(connection);
+        http_connection_discard(connection);
         return;
     }
 
@@ -1190,6 +1195,6 @@ http_connection_write_405_error(struct http_connection *connection,
 
 error:
     http_connection_abort(connection);
-    http_connection_delete(connection);
+    http_connection_discard(connection);
     return -1;
 }

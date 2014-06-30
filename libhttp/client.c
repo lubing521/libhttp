@@ -272,7 +272,7 @@ http_client_trace(const struct http_client *client, const char *fmt, ...) {
 
 static void
 http_client_disconnect(struct http_client *client) {
-    http_connection_delete(client->connection);
+    http_connection_discard(client->connection);
     client->connection = NULL;
 }
 

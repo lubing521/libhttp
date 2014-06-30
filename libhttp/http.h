@@ -372,7 +372,7 @@ int http_client_send_request_with_file(struct http_client *, enum http_method,
                                        const char *, int, size_t);
 
 /* Connections */
-void http_connection_delete(struct http_connection *);
+void http_connection_discard(struct http_connection *);
 int http_connection_shutdown(struct http_connection *);
 
 const char *http_connection_address(const struct http_connection *);

@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -189,9 +190,10 @@ http_server_delete(struct http_server *server) {
 
         while (ht_table_iterator_next(it, NULL, (void **)&connection) == 1)
             http_connection_delete(connection);
+        ht_table_iterator_delete(it);
+
         ht_table_delete(server->connections);
 
-        ht_table_iterator_delete(it);
     }
 
     it = ht_table_iterate(server->listeners);
@@ -200,9 +202,9 @@ http_server_delete(struct http_server *server) {
 
         while (ht_table_iterator_next(it, NULL, (void **)&listener) == 1)
             http_listener_delete(listener);
-        ht_table_delete(server->listeners);
-
         ht_table_iterator_delete(it);
+
+        ht_table_delete(server->listeners);
     }
 
     if (server->ssl_ctx)
@@ -349,6 +351,24 @@ http_server_does_listen_on_host_string(const struct http_server *server,
 
     ht_table_iterator_delete(it);
     return found;
+}
+
+void
+http_server_register_connection(struct http_server *server,
+                                struct http_connection *connection) {
+    assert(connection->sock >= 0);
+
+    ht_table_insert(server->connections, HT_INT32_TO_POINTER(connection->sock),
+                    connection);
+}
+
+void
+http_server_unregister_connection(struct http_server *server,
+                                  struct http_connection *connection) {
+    assert(connection->sock >= 0);
+
+    ht_table_remove(server->connections,
+                    HT_INT32_TO_POINTER(connection->sock));
 }
 
 static void
@@ -524,14 +544,6 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
         return;
     }
 
-    if (ht_table_insert(server->connections,
-                        HT_INT32_TO_POINTER(connection->sock),
-                        connection) == -1) {
-        http_server_error(server, "%s", ht_get_error());
-        http_connection_delete(connection);
-        return;
-    }
-
     ret = getnameinfo((struct sockaddr *)&addr, addrlen,
                       host, NI_MAXHOST,
                       port, NI_MAXSERV,
@@ -539,7 +551,7 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
     if (ret != 0) {
         http_server_error(server, "cannot resolve address: %s",
                           gai_strerror(ret));
-        http_connection_delete(connection);
+        http_connection_discard(connection);
         return;
     }
 
@@ -552,7 +564,7 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
     } else {
         http_server_error(server, "unknown address family %d",
                           addr.ss_family);
-        http_connection_delete(connection);
+        http_connection_discard(connection);
         return;
     }
 
@@ -560,8 +572,10 @@ http_listener_on_sock_event(evutil_socket_t sock, short events, void *arg) {
         if (SSL_accept(connection->ssl) != 1) {
             http_server_error(server, "cannot accept ssl connection: %s",
                               http_ssl_get_error());
-            http_connection_delete(connection);
+            http_connection_discard(connection);
             return;
         }
     }
+
+    http_server_register_connection(server, connection);
 }

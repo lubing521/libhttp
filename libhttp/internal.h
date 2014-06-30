@@ -338,6 +338,7 @@ struct http_connection {
 
 struct http_connection *http_connection_new(enum http_connection_type,
                                             void *, int);
+void http_connection_delete(struct http_connection *);
 
 const struct http_cfg *http_connection_get_cfg(const struct http_connection *);
 
@@ -463,6 +464,11 @@ bool http_server_does_listen_on(const struct http_server *,
                                 const char *, const char *);
 bool http_server_does_listen_on_host_string(const struct http_server *,
                                             const char *);
+
+void http_server_register_connection(struct http_server *,
+                                     struct http_connection *);
+void http_server_unregister_connection(struct http_server *,
+                                       struct http_connection *);
 
 /* Clients */
 struct http_client {
