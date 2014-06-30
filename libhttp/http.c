@@ -1607,7 +1607,7 @@ http_msg_parse_chunk(struct bf_buffer *buf, struct http_parser *parser) {
         len -= chunk_length - 2;
     }
 
-    bf_buffer_skip(buf, (size_t)(ptr - bf_buffer_data(buf)));
+    bf_buffer_skip(buf, (size_t)(ptr - (char *)bf_buffer_data(buf)));
 
     if (chunk_length == 0) {
         /* This was the last chunk */
