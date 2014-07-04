@@ -303,6 +303,9 @@ http_stream_buffer_write(struct http_stream *stream,
     } else {
         ret = bf_buffer_write(buf, fd);
         if (ret == -1) {
+            if (errno == ECONNRESET)
+                stream->connection->closed_by_peer = true;
+
             http_set_error("%s", bf_get_error());
             return -1;
         }
@@ -441,6 +444,9 @@ http_stream_file_write(struct http_stream *stream,
     } else {
         ret = bf_buffer_write(file->buf, fd);
         if (ret == -1) {
+            if (errno == ECONNRESET)
+                stream->connection->closed_by_peer = true;
+
             http_set_error("%s", strerror(errno));
             return -1;
         }
