@@ -260,7 +260,12 @@ int http_default_error_sender(struct http_connection *connection,
 
     http_headers_set_header(headers, "Content-Type", "text/html");
 
-    http_connection_write_headers_and_body(connection, headers, body, bodysz);
+    if (http_connection_send_response_with_body(connection, status_code,
+                                                headers,
+                                                body, bodysz) == -1) {
+        http_free(body);
+        return -1;
+    }
 
     http_free(body);
     return 0;
