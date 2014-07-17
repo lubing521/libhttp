@@ -140,10 +140,12 @@ http_ssl_new(SSL_CTX *ctx, int fd) {
 ssize_t
 http_buf_ssl_read(struct bf_buffer *buf, int fd, size_t sz,
                   SSL *ssl, int *ssl_errcode) {
-    char tmp[sz];
+    char *ptr;
     int ret;
 
-    ret = SSL_read(ssl, tmp, sz);
+    ptr = bf_buffer_reserve(buf, sz);
+
+    ret = SSL_read(ssl, ptr, sz);
     if (ret <= 0) {
         int errcode;
 
@@ -159,7 +161,7 @@ http_buf_ssl_read(struct bf_buffer *buf, int fd, size_t sz,
         }
     }
 
-    bf_buffer_add(buf, tmp, (size_t)ret);
+    bf_buffer_increase_length(buf, (size_t)ret);
     return ret;
 }
 
