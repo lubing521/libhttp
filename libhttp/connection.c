@@ -38,6 +38,8 @@ static void http_connection_track_request_received(struct http_connection *,
                                                    const struct http_msg *);
 static void http_connection_track_response_sent(struct http_connection *,
                                                 enum http_status_code);
+static void http_connection_on_response_sent(struct http_connection *,
+                                             enum http_status_code);
 static void http_connection_call_request_handler(struct http_connection *,
                                                  struct http_msg *);
 static void http_connection_call_response_handler(struct http_connection *,
@@ -334,7 +336,8 @@ http_connection_send_response(struct http_connection *connection,
 
     http_connection_write_headers_and_body(connection, headers, NULL, 0);
 
-    http_connection_track_response_sent(connection, status_code);
+    if (status_code != HTTP_CONTINUE)
+        http_connection_on_response_sent(connection, status_code);
 
     http_headers_delete(headers);
     return 0;
@@ -360,7 +363,7 @@ http_connection_send_response_with_body(struct http_connection *connection,
 
     http_connection_write_headers_and_body(connection, headers, body, bodysz);
 
-    http_connection_track_response_sent(connection, status_code);
+    http_connection_on_response_sent(connection, status_code);
 
     http_headers_delete(headers);
     return 0;
@@ -405,7 +408,7 @@ http_connection_send_response_with_file(struct http_connection *connection,
     http_connection_write_headers_and_file(connection, headers,
                                            path, fd, file_sz, ranges);
 
-    http_connection_track_response_sent(connection, status_code);
+    http_connection_on_response_sent(connection, status_code);
 
     http_headers_delete(headers);
     return 0;
@@ -501,6 +504,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
     }
 
     if (ret == 0) {
+        /* Connection closed */
         http_connection_discard(connection);
         return;
     }
@@ -565,6 +569,9 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                     http_connection_call_response_handler(connection, msg);
                 }
 
+                /* For bufferized messages, msg->body only contains data
+                 * received since the last call to the handler, so we delete
+                 * them to be ready for the next time we receive some. */
                 http_free(msg->body);
                 msg->body = NULL;
                 msg->body_length = 0;
@@ -656,6 +663,9 @@ http_connection_abort(struct http_connection *connection) {
 
     msg = connection->current_msg;
     headers_read = http_parser_are_headers_read(&connection->parser);
+
+    /* If there is a current message that is not bufferized, we need to call
+     * the handler one last time. */
 
     if (msg && headers_read && !msg->is_bufferized && !msg->aborted) {
         msg->aborted = true;
@@ -1087,6 +1097,12 @@ http_connection_track_response_sent(struct http_connection *connection,
 
     cfg = http_connection_get_cfg(connection);
 
+    if (!connection->current_msg) {
+        /* If there is no current message, it means we could not parse the
+         * request. We cannot track it */
+        return;
+    }
+
     /* In HTTP, response are sent in the order requests were received. For
      * example, when receiving requests A, B and C, the server *must* respond
      * to A first, then to B and C. */
@@ -1109,6 +1125,21 @@ http_connection_track_response_sent(struct http_connection *connection,
 }
 
 static void
+http_connection_on_response_sent(struct http_connection *connection,
+                                 enum http_status_code status_code) {
+    if (connection->current_msg) {
+        struct http_msg *msg;
+
+        msg = connection->current_msg;
+        assert(msg->type == HTTP_MSG_REQUEST);
+
+        msg->u.request.response_sent = true;
+
+        http_connection_track_response_sent(connection, status_code);
+    }
+}
+
+static void
 http_connection_call_request_handler(struct http_connection *connection,
                                      struct http_msg *msg) {
     void *arg;
@@ -1119,6 +1150,13 @@ http_connection_call_request_handler(struct http_connection *connection,
 
     arg = connection->server->route_base->msg_handler_arg;
     connection->current_route->msg_handler(connection, msg, arg);
+
+    if (msg->is_complete && !msg->u.request.response_sent) {
+        http_connection_error(connection,
+                              "message handler did not send a response");
+        http_connection_send_error(connection, HTTP_INTERNAL_SERVER_ERROR,
+                                   "no available response");
+    }
 
     connection->msg_handler_called = true;
 }

@@ -155,6 +155,8 @@ struct http_request {
 
     bool has_ranges;
     struct http_ranges ranges;
+
+    bool response_sent;
 };
 
 void http_request_free(struct http_request *);
