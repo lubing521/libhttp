@@ -34,10 +34,6 @@ static int http_connection_preprocess_request(struct http_connection *,
                                               struct http_msg *);
 static int http_connection_preprocess_response(struct http_connection *,
                                                struct http_msg *);
-static void http_connection_track_request_received(struct http_connection *,
-                                                   const struct http_msg *);
-static void http_connection_track_response_sent(struct http_connection *,
-                                                enum http_status_code);
 static void http_connection_on_response_sent(struct http_connection *,
                                              enum http_status_code);
 static void http_connection_call_request_handler(struct http_connection *,
@@ -529,8 +525,11 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         if (http_parser_are_headers_read(parser) && !parser->msg_preprocessed) {
             int ret;
 
-            if (connection->type == HTTP_CONNECTION_SERVER)
+            if (connection->type == HTTP_CONNECTION_SERVER) {
                 http_connection_track_request_received(connection, msg);
+            } else if (connection->type == HTTP_CONNECTION_CLIENT) {
+                http_connection_track_response_received(connection, msg);
+            }
 
             ret = http_connection_preprocess_msg(connection, msg);
             if (ret == -1) {
@@ -681,9 +680,8 @@ http_connection_abort(struct http_connection *connection) {
 int
 http_connection_write_request(struct http_connection *connection,
                               enum http_method method,
-                              const struct http_uri *uri) {
+                              const char *path) {
     const char *version_str, *method_str;
-    char *path;
 
     version_str = http_version_to_string(HTTP_1_1);
 
@@ -693,14 +691,8 @@ http_connection_write_request(struct http_connection *connection,
         return -1;
     }
 
-    path = http_uri_encode_path_and_query(uri);
-    if (!path)
-        return -1;
-
     http_connection_printf(connection, "%s %s %s\r\n",
                            method_str, path, version_str);
-
-    http_free(path);
     return 0;
 }
 
@@ -886,6 +878,116 @@ http_connection_unregister_request_info(struct http_connection *connection,
         connection->requests_last = info->prev;
 }
 
+void
+http_connection_track_request_send(struct http_connection *connection,
+                                   enum http_method method,
+                                   const char *uri_string) {
+    struct http_request_info *info;
+
+    assert(connection->type == HTTP_CONNECTION_CLIENT);
+
+    info = http_request_info_new();
+
+    info->version = HTTP_1_1;
+    info->method = method,
+    info->uri_string = http_strdup(uri_string);
+    info->date = time(NULL);
+
+    http_connection_register_request_info(connection, info);
+}
+
+void
+http_connection_track_request_received(struct http_connection *connection,
+                                       const struct http_msg *msg) {
+    struct http_request_info *info;
+    const struct http_request *request;
+
+    assert(connection->type == HTTP_CONNECTION_SERVER);
+    assert(msg->type == HTTP_MSG_REQUEST);
+
+    request = &msg->u.request;
+
+    info = http_request_info_new();
+
+    info->version = msg->version;
+    info->method = request->method;
+    info->uri_string = http_strdup(request->uri_string);
+    info->date = time(NULL);
+
+    http_connection_register_request_info(connection, info);
+}
+
+void
+http_connection_track_response_sent(struct http_connection *connection,
+                                    enum http_status_code status_code) {
+    struct http_request_info *info;
+    const struct http_cfg *cfg;
+
+    assert(connection->type == HTTP_CONNECTION_SERVER);
+
+    cfg = http_connection_get_cfg(connection);
+
+    if (!connection->current_msg) {
+        /* If there is no current message, it means we could not parse the
+         * request. We cannot track it */
+        return;
+    }
+
+    /* In HTTP, response are sent in the order requests were received. For
+     * example, when receiving requests A, B and C, the server *must* respond
+     * to A first, then to B and C. */
+
+    if (!connection->requests_first) {
+        http_connection_error(connection,
+                              "sending response without pending request");
+        return;
+    }
+
+    info = connection->requests_first;
+
+    info->status_code = status_code;
+
+    if (cfg->request_hook)
+        cfg->request_hook(connection, info, cfg->hook_arg);
+
+    http_connection_unregister_request_info(connection, info);
+    http_request_info_delete(info);
+}
+
+void
+http_connection_track_response_received(struct http_connection *connection,
+                                        const struct http_msg *msg) {
+    struct http_request_info *info;
+    const struct http_response *response;
+    const struct http_cfg *cfg;
+
+    assert(connection->type == HTTP_CONNECTION_CLIENT);
+    assert(msg->type == HTTP_MSG_RESPONSE);
+
+    cfg = http_connection_get_cfg(connection);
+
+    response = &msg->u.response;
+
+    if (response->status_code == HTTP_CONTINUE)
+        return;
+
+    if (!connection->requests_first) {
+        http_connection_error(connection,
+                              "response received without pending request");
+        return;
+    }
+
+    info = connection->requests_first;
+
+    info->status_code = response->status_code;
+
+    if (cfg->request_hook)
+        cfg->request_hook(connection, info, cfg->hook_arg);
+
+    http_connection_unregister_request_info(connection, info);
+    http_request_info_delete(info);
+}
+
 static int
 http_connection_find_route(struct http_connection *connection,
                            struct http_msg *msg) {
@@ -1064,64 +1166,6 @@ http_connection_preprocess_response(struct http_connection *connection,
     msg->is_bufferized = cfg->bufferize_body;
 
     return 0;
-}
-
-static void
-http_connection_track_request_received(struct http_connection *connection,
-                                       const struct http_msg *msg) {
-    struct http_request_info *info;
-    const struct http_request *request;
-
-    assert(connection->type == HTTP_CONNECTION_SERVER);
-    assert(msg->type == HTTP_MSG_REQUEST);
-
-    request = &msg->u.request;
-
-    info = http_request_info_new();
-
-    info->version = msg->version;
-    info->method = request->method;
-    info->uri_string = http_strdup(request->uri_string);
-    info->date = time(NULL);
-
-    http_connection_register_request_info(connection, info);
-}
-
-static void
-http_connection_track_response_sent(struct http_connection *connection,
-                                    enum http_status_code status_code) {
-    struct http_request_info *info;
-    const struct http_cfg *cfg;
-
-    assert(connection->type == HTTP_CONNECTION_SERVER);
-
-    cfg = http_connection_get_cfg(connection);
-
-    if (!connection->current_msg) {
-        /* If there is no current message, it means we could not parse the
-         * request. We cannot track it */
-        return;
-    }
-
-    /* In HTTP, response are sent in the order requests were received. For
-     * example, when receiving requests A, B and C, the server *must* respond
-     * to A first, then to B and C. */
-
-    if (!connection->requests_first) {
-        http_connection_error(connection,
-                              "sending response without pending request");
-        return;
-    }
-
-    info = connection->requests_first;
-
-    info->status_code = status_code;
-
-    if (cfg->request_hook)
-        cfg->request_hook(connection, info, cfg->hook_arg);
-
-    http_connection_unregister_request_info(connection, info);
-    http_request_info_delete(info);
 }
 
 static void

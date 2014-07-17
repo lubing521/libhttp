@@ -213,6 +213,7 @@ struct http_request_info {
     /* Request */
     enum http_version version;
     enum http_method method;
+    struct http_uri *uri;
     char *uri_string;
 
     time_t date;
@@ -379,7 +380,7 @@ void http_connection_on_write_event(evutil_socket_t, short, void *);
 void http_connection_abort(struct http_connection *);
 
 int http_connection_write_request(struct http_connection *,
-                                  enum http_method, const struct http_uri *);
+                                  enum http_method, const char *);
 int http_connection_write_response(struct http_connection *,
                                    enum http_status_code, const char *);
 void http_connection_write_header(struct http_connection *,
@@ -401,6 +402,15 @@ void http_connection_register_request_info(struct http_connection *,
                                            struct http_request_info *);
 void http_connection_unregister_request_info(struct http_connection *,
                                              struct http_request_info *);
+
+void http_connection_track_request_send(struct http_connection *,
+                                        enum http_method, const char *);
+void http_connection_track_request_received(struct http_connection *,
+                                            const struct http_msg *);
+void http_connection_track_response_sent(struct http_connection *,
+                                         enum http_status_code);
+void http_connection_track_response_received(struct http_connection *,
+                                             const struct http_msg *);
 
 /* Routes */
 enum http_route_match_result {

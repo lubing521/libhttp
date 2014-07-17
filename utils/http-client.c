@@ -41,6 +41,8 @@ static void httpc_shutdown(void);
 
 static void httpc_on_error(const char *, void *);
 static void httpc_on_trace(const char *, void *);
+static void httpc_on_request(struct http_connection *,
+                             const struct http_request_info *, void *);
 
 static void httpc_process_uri(struct http_uri *);
 static void httpc_on_response(struct http_client *, const struct http_msg *,
@@ -133,6 +135,29 @@ httpc_on_trace(const char *msg, void *arg) {
 }
 
 static void
+httpc_on_request(struct http_connection *connection,
+                 const struct http_request_info *info, void *arg) {
+    char date_string[64];
+    struct tm tm;
+    time_t date;
+
+    date = http_request_info_date(info);
+
+    if (localtime_r(&date, &tm) == NULL) {
+        fprintf(stderr, "cannot transform date: %s\n", strerror(errno));
+        return;
+    }
+
+    strftime(date_string, sizeof(date_string), "%Y-%m-%dT%H:%M:%S%z", &tm);
+
+    printf("%s %s %s %d\n",
+           date_string,
+           http_method_to_string(http_request_info_method(info)),
+           http_request_info_uri_string(info),
+           http_request_info_status_code(info));
+}
+
+static void
 httpc_process_uri(struct http_uri *uri) {
     struct http_client *client;
     struct http_cfg cfg;
@@ -147,6 +172,7 @@ httpc_process_uri(struct http_uri *uri) {
 
     cfg.error_hook = httpc_on_error;
     cfg.trace_hook = httpc_on_trace;
+    cfg.request_hook = httpc_on_request;
 
     cfg.u.client.response_handler = httpc_on_response;
 

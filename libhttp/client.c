@@ -162,21 +162,31 @@ int
 http_client_send_request(struct http_client *client, enum http_method method,
                          const struct http_uri *uri,
                          struct http_headers *headers) {
+    char *path;
+
+    path = http_uri_encode_path_and_query(uri);
+    if (!path)
+        return -1;
+
     if (headers == NULL)
         headers = http_headers_new();
 
     http_client_init_request_headers(client, uri, headers);
 
-    if (http_connection_write_request(client->connection, method, uri) == -1)
+    if (http_connection_write_request(client->connection, method, path) == -1)
         goto error;
 
     http_connection_write_headers(client->connection, headers);
     http_connection_write(client->connection, "\r\n", 2);
 
+    http_connection_track_request_send(client->connection, method, path);
+
+    http_free(path);
     http_headers_delete(headers);
     return 0;
 
 error:
+    http_free(path);
     http_headers_delete(headers);
     http_client_disconnect(client);
     return -1;
@@ -188,6 +198,12 @@ http_client_send_request_with_body(struct http_client *client,
                                    const struct http_uri *uri,
                                    struct http_headers *headers,
                                    const char *body, size_t bodysz) {
+    char *path;
+
+    path = http_uri_encode_path_and_query(uri);
+    if (!path)
+        return -1;
+
     if (headers == NULL)
         headers = http_headers_new();
 
@@ -195,17 +211,21 @@ http_client_send_request_with_body(struct http_client *client,
 
     http_headers_format_header(headers, "Content-Length", "%zu", bodysz);
 
-    if (http_connection_write_request(client->connection, method, uri) == -1)
+    if (http_connection_write_request(client->connection, method, path) == -1)
         goto error;
 
     http_connection_write_headers(client->connection, headers);
     http_connection_write(client->connection, "\r\n", 2);
     http_connection_write(client->connection, body, bodysz);
 
+    http_connection_track_request_send(client->connection, method, path);
+
+    http_free(path);
     http_headers_delete(headers);
     return 0;
 
 error:
+    http_free(path);
     http_headers_delete(headers);
     http_client_disconnect(client);
     return -1;
@@ -216,7 +236,14 @@ http_client_send_request_with_file(struct http_client *client,
                                    enum http_method method,
                                    const struct http_uri *uri,
                                    struct http_headers *headers,
-                                   const char *path, int fd, size_t file_sz) {
+                                   const char *file_path, int fd,
+                                   size_t file_sz) {
+    char *path;
+
+    path = http_uri_encode_path_and_query(uri);
+    if (!path)
+        return -1;
+
     if (headers == NULL)
         headers = http_headers_new();
 
@@ -224,18 +251,22 @@ http_client_send_request_with_file(struct http_client *client,
 
     http_headers_format_header(headers, "Content-Length", "%zu", file_sz);
 
-    if (http_connection_write_request(client->connection, method, uri) == -1)
+    if (http_connection_write_request(client->connection, method, path) == -1)
         goto error;
 
     http_connection_write_headers(client->connection, headers);
     http_connection_write(client->connection, "\r\n", 2);
-    http_stream_add_file(client->connection->wstream, fd, file_sz, path);
+    http_stream_add_file(client->connection->wstream, fd, file_sz, file_path);
 
+    http_connection_track_request_send(client->connection, method, path);
+
+    http_free(path);
     http_headers_delete(headers);
     return 0;
 
 error:
     close(fd);
+    http_free(path);
     http_headers_delete(headers);
     return -1;
 }
