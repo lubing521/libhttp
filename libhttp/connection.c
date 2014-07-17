@@ -34,6 +34,10 @@ static int http_connection_preprocess_request(struct http_connection *,
                                               struct http_msg *);
 static int http_connection_preprocess_response(struct http_connection *,
                                                struct http_msg *);
+static void http_connection_track_request_received(struct http_connection *,
+                                                   const struct http_msg *);
+static void http_connection_track_response_sent(struct http_connection *,
+                                                enum http_status_code);
 static void http_connection_call_request_handler(struct http_connection *,
                                                  struct http_msg *);
 static void http_connection_call_response_handler(struct http_connection *,
@@ -136,6 +140,8 @@ error:
 
 void
 http_connection_delete(struct http_connection *connection) {
+    struct http_request_info *info;
+
     if (!connection)
         return;
 
@@ -156,6 +162,16 @@ http_connection_delete(struct http_connection *connection) {
 
     if (connection->ssl)
         SSL_free(connection->ssl);
+
+    info = connection->requests_first;
+    while (info) {
+        struct http_request_info *next;
+
+        next = info->next;
+        http_request_info_delete(info);
+
+        info = next;
+    }
 
     memset(connection, 0, sizeof(struct http_connection));
     http_free(connection);
@@ -318,6 +334,8 @@ http_connection_send_response(struct http_connection *connection,
 
     http_connection_write_headers_and_body(connection, headers, NULL, 0);
 
+    http_connection_track_response_sent(connection, status_code);
+
     http_headers_delete(headers);
     return 0;
 
@@ -341,6 +359,8 @@ http_connection_send_response_with_body(struct http_connection *connection,
         goto error;
 
     http_connection_write_headers_and_body(connection, headers, body, bodysz);
+
+    http_connection_track_response_sent(connection, status_code);
 
     http_headers_delete(headers);
     return 0;
@@ -384,6 +404,8 @@ http_connection_send_response_with_file(struct http_connection *connection,
 
     http_connection_write_headers_and_file(connection, headers,
                                            path, fd, file_sz, ranges);
+
+    http_connection_track_response_sent(connection, status_code);
 
     http_headers_delete(headers);
     return 0;
@@ -503,6 +525,9 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
         if (http_parser_are_headers_read(parser) && !parser->msg_preprocessed) {
             int ret;
 
+            if (connection->type == HTTP_CONNECTION_SERVER)
+                http_connection_track_request_received(connection, msg);
+
             ret = http_connection_preprocess_msg(connection, msg);
             if (ret == -1) {
                 http_connection_error(connection, "%s", http_get_error());
@@ -565,8 +590,8 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
                 http_connection_call_response_handler(connection, msg);
             }
 
-            if (cfg->request_hook)
-                cfg->request_hook(connection, msg, cfg->hook_arg);
+            if (cfg->request_received_hook)
+                cfg->request_received_hook(connection, msg, cfg->hook_arg);
 
             if (!connection->msg_handler_called) {
                 /* The request was fully processed */
@@ -815,6 +840,42 @@ http_connection_write_headers_and_file(struct http_connection *connection,
     }
 }
 
+void
+http_connection_register_request_info(struct http_connection *connection,
+                                      struct http_request_info *info) {
+    /*
+     * requests_first --> request_1 --> request_2 --> NULL
+     *                                    ^
+     *                                    |
+     * requests_last ---------------------+
+     */
+
+    info->next = NULL;
+    info->prev = connection->requests_last;
+
+    if (connection->requests_last)
+        connection->requests_last->next = info;
+
+    if (!connection->requests_first)
+        connection->requests_first = info;
+
+    connection->requests_last = info;
+}
+
+void
+http_connection_unregister_request_info(struct http_connection *connection,
+                                        struct http_request_info *info) {
+    if (info->prev)
+        info->prev->next = info->next;
+    if (info->next)
+        info->next->prev = info->prev;
+
+    if (connection->requests_first == info)
+        connection->requests_first = info->next;
+    if (connection->requests_last == info)
+        connection->requests_last = info->prev;
+}
+
 static int
 http_connection_find_route(struct http_connection *connection,
                            struct http_msg *msg) {
@@ -993,6 +1054,58 @@ http_connection_preprocess_response(struct http_connection *connection,
     msg->is_bufferized = cfg->bufferize_body;
 
     return 0;
+}
+
+static void
+http_connection_track_request_received(struct http_connection *connection,
+                                       const struct http_msg *msg) {
+    struct http_request_info *info;
+    const struct http_request *request;
+
+    assert(connection->type == HTTP_CONNECTION_SERVER);
+    assert(msg->type == HTTP_MSG_REQUEST);
+
+    request = &msg->u.request;
+
+    info = http_request_info_new();
+
+    info->version = msg->version;
+    info->method = request->method;
+    info->uri_string = http_strdup(request->uri_string);
+    info->date = time(NULL);
+
+    http_connection_register_request_info(connection, info);
+}
+
+static void
+http_connection_track_response_sent(struct http_connection *connection,
+                                    enum http_status_code status_code) {
+    struct http_request_info *info;
+    const struct http_cfg *cfg;
+
+    assert(connection->type == HTTP_CONNECTION_SERVER);
+
+    cfg = http_connection_get_cfg(connection);
+
+    /* In HTTP, response are sent in the order requests were received. For
+     * example, when receiving requests A, B and C, the server *must* respond
+     * to A first, then to B and C. */
+
+    if (!connection->requests_first) {
+        http_connection_error(connection,
+                              "sending response without pending request");
+        return;
+    }
+
+    info = connection->requests_first;
+
+    info->status_code = status_code;
+
+    if (cfg->request_hook)
+        cfg->request_hook(connection, info, cfg->hook_arg);
+
+    http_connection_unregister_request_info(connection, info);
+    http_request_info_delete(info);
 }
 
 static void

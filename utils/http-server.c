@@ -50,8 +50,10 @@ static void https_shutdown(void);
 static void https_on_signal(evutil_socket_t, short, void *);
 static void https_on_error(const char *, void *);
 static void https_on_trace(const char *, void *);
+static void https_on_request_received(struct http_connection *,
+                                      const struct http_msg *, void *);
 static void https_on_request(struct http_connection *,
-                             const struct http_msg *, void *);
+                             const struct http_request_info *, void *);
 
 static void https_foo_get(struct http_connection *, const struct http_msg *,
                           void *);
@@ -124,6 +126,7 @@ main(int argc, char **argv) {
 
     cfg.error_hook = https_on_error;
     cfg.trace_hook = https_on_trace;
+    cfg.request_received_hook = https_on_request_received;
     cfg.request_hook = https_on_request;
 
     cfg.bufferize_body = bufferize_body;
@@ -255,11 +258,11 @@ https_on_trace(const char *msg, void *arg) {
 }
 
 static void
-https_on_request(struct http_connection *connection,
-                 const struct http_msg *msg, void *arg) {
+https_on_request_received(struct http_connection *connection,
+                          const struct http_msg *msg, void *arg) {
     size_t nb_headers;
 
-    printf("\nrequest  %s %s %s\n",
+    printf("request   %s %s %s\n",
            http_method_to_string(http_request_method(msg)),
            http_request_uri(msg),
            http_version_to_string(http_msg_version(msg)));
@@ -269,12 +272,35 @@ https_on_request(struct http_connection *connection,
         const struct http_header *header;
 
         header = http_msg_header(msg, i);
-        printf("header   %s: %s\n",
+        printf("  header  %s: %s\n",
                http_header_name(header), http_header_value(header));
     }
 
     if (http_msg_body_length(msg) > 0)
-        printf("body     %zu bytes\n\n", http_msg_body_length(msg));
+        printf("  body    %zu bytes\n\n", http_msg_body_length(msg));
+}
+
+static void
+https_on_request(struct http_connection *connection,
+                 const struct http_request_info *info, void *arg) {
+    char date_string[64];
+    struct tm tm;
+    time_t date;
+
+    date = http_request_info_date(info);
+
+    if (localtime_r(&date, &tm) == NULL) {
+        fprintf(stderr, "cannot transform date: %s\n", strerror(errno));
+        return;
+    }
+
+    strftime(date_string, sizeof(date_string), "%Y-%m-%dT%H:%M:%S%z", &tm);
+
+    printf("%s %s %s %d\n",
+           date_string,
+           http_method_to_string(http_request_info_method(info)),
+           http_request_info_uri_string(info),
+           http_request_info_status_code(info));
 }
 
 static void

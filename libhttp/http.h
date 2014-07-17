@@ -219,6 +219,17 @@ bool http_form_data_has_parameter(const struct http_form_data *,
 const char *http_form_data_get_parameter(const struct http_form_data *,
                                          const char *);
 
+/* Request info */
+struct http_request_info;
+
+enum http_version http_request_info_version(const struct http_request_info *);
+enum http_method http_request_info_method(const struct http_request_info *);
+const char *http_request_info_uri_string(const struct http_request_info *);
+time_t http_request_info_date(const struct http_request_info *);
+
+enum http_status_code
+http_request_info_status_code(const struct http_request_info *);
+
 /* Configuration */
 struct http_client;
 struct http_cfg;
@@ -230,8 +241,10 @@ typedef int (*http_error_sender)(struct http_connection *,
                                  enum http_status_code,
                                  struct http_headers *, const char *);
 
+typedef void (*http_request_received_hook)(struct http_connection *,
+                                           const struct http_msg *, void *);
 typedef void (*http_request_hook)(struct http_connection *,
-                                  const struct http_msg *, void *);
+                                  const struct http_request_info *, void *);
 
 typedef void (*http_response_handler)(struct http_client *,
                                       const struct http_msg *,
@@ -257,6 +270,7 @@ struct http_cfg {
 
     http_error_hook error_hook;
     http_trace_hook trace_hook;
+    http_request_received_hook request_received_hook;
     http_request_hook request_hook;
     void *hook_arg;
 

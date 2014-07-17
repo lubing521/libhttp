@@ -206,6 +206,26 @@ void http_msg_add_header(struct http_msg *, const struct http_header *);
 
 bool http_msg_can_have_body(const struct http_msg *);
 
+/* Request/response tracking */
+struct http_request_info {
+    /* Request */
+    enum http_version version;
+    enum http_method method;
+    char *uri_string;
+
+    time_t date;
+
+    /* Response */
+    enum http_status_code status_code;
+
+    /* Misc */
+    struct http_request_info *prev;
+    struct http_request_info *next;
+};
+
+struct http_request_info *http_request_info_new(void);
+void http_request_info_delete(struct http_request_info *);
+
 /* Content decoders */
 void *http_content_form_data_decode(const struct http_msg *,
                                     const struct http_cfg *);
@@ -334,6 +354,9 @@ struct http_connection {
     struct http_msg *current_msg;
     const struct http_route *current_route;
     bool msg_handler_called;
+
+    struct http_request_info *requests_first; /* oldest */
+    struct http_request_info *requests_last;
 };
 
 struct http_connection *http_connection_new(enum http_connection_type,
@@ -371,6 +394,11 @@ void http_connection_write_headers_and_file(struct http_connection *,
                                             struct http_headers *,
                                             const char *, int, size_t,
                                             const struct http_ranges *);
+
+void http_connection_register_request_info(struct http_connection *,
+                                           struct http_request_info *);
+void http_connection_unregister_request_info(struct http_connection *,
+                                             struct http_request_info *);
 
 /* Routes */
 enum http_route_match_result {

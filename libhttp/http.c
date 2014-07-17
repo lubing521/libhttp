@@ -841,6 +841,51 @@ http_msg_can_have_body(const struct http_msg *msg) {
     return false;
 }
 
+struct http_request_info *
+http_request_info_new(void) {
+    struct http_request_info *info;
+
+    info = http_malloc0(sizeof(struct http_request_info));
+
+    return info;
+}
+
+void
+http_request_info_delete(struct http_request_info *info) {
+    if (!info)
+        return;
+
+    http_free(info->uri_string);
+
+    memset(info, 0, sizeof(struct http_request_info));
+    http_free(info);
+}
+
+enum http_version
+http_request_info_version(const struct http_request_info *info) {
+    return info->version;
+}
+
+enum http_method
+http_request_info_method(const struct http_request_info *info) {
+    return info->method;
+}
+
+const char *
+http_request_info_uri_string(const struct http_request_info *info) {
+    return info->uri_string;
+}
+
+time_t
+http_request_info_date(const struct http_request_info *info) {
+    return info->date;
+}
+
+enum http_status_code
+http_request_info_status_code(const struct http_request_info *info) {
+    return info->status_code;
+}
+
 int
 http_request_process_uri(struct http_msg *msg) {
     const char *uri;
