@@ -1744,6 +1744,8 @@ http_msg_process_headers(struct http_parser *parser) {
             struct http_pvalues pvalues;
             bool is_chunked;
 
+            is_chunked = false;
+
             if (http_pvalues_parse(&pvalues, header->value) == -1) {
                 HTTP_ERROR(HTTP_BAD_REQUEST,
                            "invalid Transfer-Encoding header: %s",
