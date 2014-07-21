@@ -560,7 +560,7 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
              * was not entirely read). */
 
             if (connection->current_msg
-             && http_parser_are_headers_read(parser)
+             && parser->msg_preprocessed
              && !msg->is_bufferized && msg->body_length > 0) {
                 if (connection->type == HTTP_CONNECTION_SERVER) {
                     http_connection_call_request_handler(connection, msg);
@@ -1281,6 +1281,12 @@ static int
 http_connection_init_response_headers(struct http_connection *connection,
                                       struct http_headers *headers) {
     char date[HTTP_RFC1123_DATE_BUFSZ];
+    const struct http_cfg *cfg;
+    const struct http_route *route;
+
+    route = connection->current_route;
+
+    cfg = http_connection_get_cfg(connection);
 
     if (http_format_timestamp(date, HTTP_RFC1123_DATE_BUFSZ,
                               time(NULL)) == -1) {
@@ -1288,6 +1294,14 @@ http_connection_init_response_headers(struct http_connection *connection,
     }
 
     http_headers_set_header(headers, "Date", date);
+    http_headers_add_headers(headers, cfg->default_headers);
+
+    /* There is no current route if we are sending a response before finding a
+     * route (for example for errors, responses to OPTIONS requests, 100
+     * Continue, etc. */
+    if (route)
+        http_headers_add_headers(headers, route->options.default_headers);
+
     return 0;
 }
 

@@ -56,6 +56,39 @@ http_route_options_init(struct http_route_options *options,
 
     options->bufferize_body = cfg->bufferize_body;
     options->max_content_length = cfg->max_content_length;
+
+    options->default_headers = http_headers_new();
+}
+
+void
+http_route_options_free(struct http_route_options *options) {
+    if (!options)
+        return;
+
+    http_headers_delete(options->default_headers);
+
+    memset(options, 0, sizeof(struct http_route_options));
+}
+
+void
+http_route_options_copy(struct http_route_options *dest,
+                        const struct http_route_options *src) {
+    *dest = *src;
+
+    dest->default_headers = http_headers_new();
+    http_headers_add_headers(dest->default_headers, src->default_headers);
+}
+
+void
+http_route_options_default_header_add(struct http_route_options *options,
+                                      const char *name, const char *value) {
+    http_headers_add_header(options->default_headers, name, value);
+}
+
+void
+http_route_options_default_header_set(struct http_route_options *options,
+                                      const char *name, const char *value) {
+    http_headers_set_header(options->default_headers, name, value);
 }
 
 struct http_server *

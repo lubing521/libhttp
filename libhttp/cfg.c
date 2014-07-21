@@ -42,6 +42,7 @@ http_cfg_init_client(struct http_cfg *cfg) {
 void
 http_cfg_free(struct http_cfg *cfg) {
     http_free(cfg->content_decoders);
+    http_headers_delete(cfg->default_headers);
 
     memset(cfg, 0, sizeof(struct http_cfg));
 }
@@ -85,6 +86,18 @@ http_cfg_content_decoder_get(const struct http_cfg *cfg,
     return NULL;
 }
 
+void
+http_cfg_default_header_add(struct http_cfg *cfg,
+                            const char *name, const char *value) {
+    http_headers_add_header(cfg->default_headers, name, value);
+}
+
+void
+http_cfg_default_header_set(struct http_cfg *cfg,
+                            const char *name, const char *value) {
+    http_headers_set_header(cfg->default_headers, name, value);
+}
+
 static void
 http_cfg_init_base(struct http_cfg *cfg) {
     memset(cfg, 0, sizeof(struct http_cfg));
@@ -92,6 +105,8 @@ http_cfg_init_base(struct http_cfg *cfg) {
     http_cfg_content_decoder_add(cfg, "application/x-www-form-urlencoded",
                                      http_content_form_data_decode,
                                      http_content_form_data_delete);
+
+    cfg->default_headers = http_headers_new();
 
     cfg->host = "localhost";
     cfg->port = "80";

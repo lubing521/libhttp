@@ -205,6 +205,8 @@ void http_headers_delete(struct http_headers *);
 
 const char *http_headers_get_header(struct http_headers *, const char *);
 void http_headers_add_header(struct http_headers *, const char *, const char *);
+void http_headers_add_headers(struct http_headers *,
+                              const struct http_headers *);
 void http_headers_set_header(struct http_headers *, const char *, const char *);
 void http_headers_format_header(struct http_headers *, const char *,
                                 const char *, ...);
@@ -306,6 +308,8 @@ struct http_cfg {
 
     struct http_content_decoder *content_decoders;
     size_t nb_content_decoders;
+
+    struct http_headers *default_headers;
 };
 
 void http_cfg_init_server(struct http_cfg *cfg);
@@ -317,6 +321,9 @@ void http_cfg_content_decoder_add(struct http_cfg *, const char *,
                                   http_content_delete_func);
 const struct http_content_decoder *
 http_cfg_content_decoder_get(const struct http_cfg *, const char *);
+
+void http_cfg_default_header_add(struct http_cfg *, const char *, const char *);
+void http_cfg_default_header_set(struct http_cfg *, const char *, const char *);
 
 /* URIs */
 struct http_uri *http_uri_new(const char *);
@@ -347,10 +354,20 @@ struct http_route_options {
     bool bufferize_body;
 
     size_t max_content_length;
+
+    struct http_headers *default_headers;
 };
 
 void http_route_options_init(struct http_route_options *,
                              const struct http_cfg *);
+void http_route_options_free(struct http_route_options *);
+void http_route_options_copy(struct http_route_options *,
+                             const struct http_route_options *);
+
+void http_route_options_default_header_add(struct http_route_options *,
+                                           const char *, const char *);
+void http_route_options_default_header_set(struct http_route_options *,
+                                           const char *, const char *);
 
 typedef void (*http_msg_handler)(struct http_connection *,
                                  const struct http_msg *, void *);

@@ -176,6 +176,8 @@ http_route_delete(struct http_route *route) {
 
     http_route_components_free(route->components, route->nb_components);
 
+    http_route_options_free(&route->options);
+
     memset(route, 0, sizeof(struct http_route));
     http_free(route);
 }
@@ -185,7 +187,7 @@ http_route_apply_options(struct http_route *route,
                          const struct http_route_options *options,
                          const struct http_cfg *cfg) {
     if (options) {
-        route->options = *options;
+        http_route_options_copy(&route->options, options);
     } else {
         http_route_options_init(&route->options, cfg);
     }

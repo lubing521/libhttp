@@ -275,6 +275,28 @@ http_headers_add_header(struct http_headers *headers,
 }
 
 void
+http_headers_add_headers(struct http_headers *headers,
+                         const struct http_headers *src) {
+    struct http_header *header;
+    size_t nsz;
+
+    if (src->nb_headers == 0)
+        return;
+
+    headers->nb_headers += src->nb_headers;
+    nsz = headers->nb_headers * sizeof(struct http_header);
+    headers->headers = http_realloc(headers->headers, nsz);
+    header = headers->headers + headers->nb_headers - src->nb_headers;
+
+    for (size_t i = 0; i < src->nb_headers; i++) {
+        header->name = http_strdup(src->headers[i].name);
+        header->value = http_strdup(src->headers[i].value);
+
+        header++;
+    }
+}
+
+void
 http_headers_set_header(struct http_headers *headers,
                         const char *name, const char *value) {
     for (size_t i = 0; i < headers->nb_headers; i++) {

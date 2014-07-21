@@ -221,12 +221,14 @@ HTTPS_SETUP_SIGNAL_HANDLER(https.ev_sigterm, SIGTERM);
     options.bufferize_body = true;
     http_server_add_route(https.server, HTTP_POST, "/upload/buffered",
                           https_upload_buffered_post, &options);
+    http_route_options_free(&options);
 
     http_route_options_init(&options, cfg);
     options.bufferize_body = false;
     options.max_content_length = 0;
     http_server_add_route(https.server, HTTP_POST, "/upload/unbuffered",
                           https_upload_unbuffered_post, &options);
+    http_route_options_free(&options);
 }
 
 static void

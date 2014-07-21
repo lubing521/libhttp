@@ -311,5 +311,10 @@ static void
 http_client_init_request_headers(struct http_client *client,
                                  const struct http_uri *uri,
                                  struct http_headers *headers) {
+    const struct http_cfg *cfg;
+
+    cfg = client->cfg;
+
     http_headers_set_header(headers, "Host", uri->host);
+    http_headers_add_headers(headers, cfg->default_headers);
 }
