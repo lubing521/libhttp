@@ -203,7 +203,12 @@ http_connection_check_for_timeout(struct http_connection *connection,
             http_connection_send_error(connection, HTTP_REQUEST_TIMEOUT, NULL);
         }
 
-        http_connection_shutdown(connection);
+        if (http_connection_shutdown(connection) == -1) {
+            http_connection_error(connection,
+                                  "cannot shutdown connection: %s",
+                                  http_get_error());
+            return;
+        }
     }
 }
 
@@ -257,6 +262,8 @@ http_connection_discard(struct http_connection *connection) {
 
 int
 http_connection_shutdown(struct http_connection *connection) {
+    http_connection_abort(connection);
+
     if (event_del(connection->ev_read) == -1) {
         http_set_error("cannot remove read event handler: %s",
                        strerror(errno));
@@ -491,9 +498,9 @@ http_connection_on_read_event(evutil_socket_t sock, short events, void *arg) {
             if (errno != ECONNRESET) {
                 http_connection_error(connection, "cannot read socket: %s",
                                       strerror(errno));
-                http_connection_abort(connection);
             }
 
+            http_connection_abort(connection);
             http_connection_discard(connection);
             return;
         }
@@ -619,8 +626,12 @@ error:
     /* At this point we do not know whether we started responsing to the
      * message or not; since we do not want to let the connection in an
      * unknown state, we close it. */
-    http_connection_abort(connection);
-    http_connection_shutdown(connection);
+    if (http_connection_shutdown(connection) == -1) {
+        http_connection_error(connection,
+                              "cannot shutdown connection: %s",
+                              http_get_error());
+        return;
+    }
 }
 
 void
@@ -1247,11 +1258,9 @@ http_connection_on_msg_processed(struct http_connection *connection) {
 
     if (do_shutdown) {
         if (http_connection_shutdown(connection) == -1) {
-            http_connection_abort(connection);
             http_connection_error(connection,
                                   "cannot shutdown connection: %s",
                                   http_get_error());
-            http_connection_discard(connection);
             return;
         }
     }
@@ -1263,9 +1272,9 @@ http_connection_on_msg_processed(struct http_connection *connection) {
     }
 
     if (http_parser_reset(&connection->parser, msg_type, cfg) == -1) {
-        http_connection_abort(connection);
         http_connection_error(connection, "cannot reset parser: %s",
                               http_get_error());
+        http_connection_abort(connection);
         http_connection_discard(connection);
         return;
     }
