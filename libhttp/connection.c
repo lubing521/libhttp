@@ -143,15 +143,15 @@ http_connection_delete(struct http_connection *connection) {
     if (!connection)
         return;
 
-    if (connection->sock >= 0) {
-        close(connection->sock);
-        connection->sock = -1;
-    }
-
     if (connection->ev_read)
         event_free(connection->ev_read);
     if (connection->ev_write)
         event_free(connection->ev_write);
+
+    if (connection->sock >= 0) {
+        close(connection->sock);
+        connection->sock = -1;
+    }
 
     bf_buffer_delete(connection->rbuf);
     http_stream_delete(connection->wstream);
