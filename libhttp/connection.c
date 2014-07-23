@@ -791,6 +791,10 @@ http_connection_write_headers_and_file(struct http_connection *connection,
         content_length = file_sz;
     }
 
+    nb_mime_parts = 0;
+    mime_part_headers = NULL;
+    mime_footer = NULL;
+
     if (ranges && ranges->nb_ranges > 1) {
         char boundary[HTTP_MIME_BOUNDARY_SZ];
         const char *content_type;
@@ -817,7 +821,7 @@ http_connection_write_headers_and_file(struct http_connection *connection,
             ret = http_asprintf(&mime_part_headers[i],
                                 "\r\n--%s\r\n"
                                 "Content-Type: %s\r\n"
-                                "Content-Range: %zu-%zu/%zu\r\n\r\n",
+                                "Content-Range: bytes %zu-%zu/%zu\r\n\r\n",
                                 boundary, content_type,
                                 range->first, range->last, file_sz);
 
@@ -832,10 +836,14 @@ http_connection_write_headers_and_file(struct http_connection *connection,
         http_headers_format_header(headers, "Content-Type",
                                    "multipart/byteranges; boundary=%s",
                                    boundary);
-    } else {
-        nb_mime_parts = 0;
-        mime_part_headers = NULL;
-        mime_footer = NULL;
+    } else if (ranges && ranges->nb_ranges == 1) {
+        struct http_range *range;
+
+        range = ranges->ranges;
+
+        http_headers_format_header(headers, "Content-Range",
+                                   "bytes %zu-%zu/%zu",
+                                   range->first, range->last, file_sz);
     }
 
     http_headers_format_header(headers, "Content-Length",
