@@ -116,6 +116,11 @@ http_stream_delete(struct http_stream *stream) {
     http_free(stream);
 }
 
+bool
+http_stream_is_empty(const struct http_stream *stream) {
+    return stream->first_entry == NULL;
+}
+
 void
 http_stream_add_entry(struct http_stream *stream, intptr_t arg,
                        const struct http_stream_functions *functions) {

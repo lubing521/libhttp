@@ -196,6 +196,8 @@ http_connection_check_for_timeout(struct http_connection *connection,
 
     diff = now - connection->last_activity;
     if (diff > cfg->connection_timeout) {
+        http_connection_trace(connection, "timeout");
+
         if (!connection->msg_handler_called
          && (connection->parser.state == HTTP_PARSER_HEADER
           || connection->parser.state == HTTP_PARSER_BODY
@@ -278,6 +280,11 @@ http_connection_shutdown(struct http_connection *connection) {
     }
 
     connection->shutting_down = true;
+
+    /* If the output stream is empty, we can discard the connection right now.
+     * If there are still data to send, wait until this is done. */
+    if (http_stream_is_empty(connection->wstream))
+        http_connection_discard(connection);
     return 0;
 }
 

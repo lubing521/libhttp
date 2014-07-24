@@ -77,6 +77,8 @@ struct http_stream_functions {
 struct http_stream *http_stream_new(struct http_connection *);
 void http_stream_delete(struct http_stream *);
 
+bool http_stream_is_empty(const struct http_stream *);
+
 void http_stream_add_entry(struct http_stream *, intptr_t,
                            const struct http_stream_functions *);
 void http_stream_add_data(struct http_stream *, const void *, size_t);
