@@ -1332,14 +1332,15 @@ http_connection_init_response_headers(struct http_connection *connection,
 static int
 http_connection_write_options_response(struct http_connection *connection,
                                        struct http_msg *msg) {
+    struct http_headers *headers;
+
+    headers = http_headers_new();
+
     if (strcmp(msg->u.request.uri_string, "*") == 0) {
-        const char *methods;
+        http_headers_add_header(headers, "Allow",
+                                "GET, POST, HEAD, PUT, DELETE, OPTIONS");
 
-        methods = "GET, POST, HEAD, PUT, DELETE, OPTIONS";
-
-        if (http_connection_write_response(connection, HTTP_OK, NULL) == -1)
-            return -1;
-        http_connection_write_header(connection, "Allow", methods);
+        return http_connection_send_response(connection, HTTP_OK, headers);
     } else {
         enum http_method methods[HTTP_METHOD_MAX];
         struct http_route_base *route_base;
@@ -1355,12 +1356,9 @@ http_connection_write_options_response(struct http_connection *connection,
         }
 
         if (nb_methods == 0) {
-            http_connection_send_error(connection, HTTP_NOT_FOUND, NULL);
-            return 1;
+            http_headers_delete(headers);
+            return http_connection_send_error(connection, HTTP_NOT_FOUND, NULL);
         }
-
-        if (http_connection_write_response(connection, HTTP_OK, NULL) == -1)
-            return -1;
 
         for (size_t i = 0; i < nb_methods; i++) {
             enum http_method method;
@@ -1369,8 +1367,10 @@ http_connection_write_options_response(struct http_connection *connection,
             method = methods[i];
             method_string = http_method_to_string(method);
 
-            http_connection_write_header(connection, "Allow", method_string);
+            http_headers_add_header(headers, "Allow", method_string);
         }
+
+        return http_connection_send_response(connection, HTTP_OK, headers);
     }
 
     return 0;
